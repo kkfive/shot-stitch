@@ -51,6 +51,9 @@
 # 电影高质量关键帧模式
 ./preview.sh video.mp4 --preset movie
 
+# 动态内容密集截图模式
+./preview.sh video.mp4 --preset dynamic
+
 # 批量处理整个目录
 ./preview.sh ./videos/
 ```
@@ -115,6 +118,9 @@ sudo dnf install ffmpeg ImageMagick bc
 # 使用优化预设
 ./preview.sh video.mp4 --preset movie
 
+# 动态内容预设
+./preview.sh video.mp4 --preset dynamic
+
 # 批量处理目录
 ./preview.sh ./videos/
 
@@ -168,6 +174,7 @@ sudo dnf install ffmpeg ImageMagick bc
 | `movie` | 电影、电视剧 | keyframe | 4 列，60 秒间隔，90% 质量 |
 | `lecture` | 讲座、会议 | time | 6 列，120 秒间隔，85% 质量 |
 | `quick` | 快速预览 | time | 3 列，300 秒间隔，80% 质量 |
+| `dynamic` | 动态内容 | smart | 6 列，15-45 秒间隔，92% 质量 |
 
 ## 🎛️ 捕获模式
 
@@ -186,7 +193,29 @@ sudo dnf install ffmpeg ImageMagick bc
 - **工作原理**: 检测并捕获 I 帧 (关键帧)
 - **使用场景**: 优质内容，详细分析
 
-## 🏗️ 项目结构
+## � 预设详解
+
+### Movie 预设 - 电影优化
+- **适用场景**: 电影、电视剧、纪录片
+- **核心特点**: 关键帧模式 + 4列布局 + 90%高质量
+- **优势**: 基于I帧的智能截图，保证关键场景不遗漏
+
+### Lecture 预设 - 讲座优化
+- **适用场景**: 讲座、会议、教程、培训视频
+- **核心特点**: 时间模式 + 6列布局 + 120秒间隔
+- **优势**: 适合内容变化较慢的场景，提供全面概览
+
+### Quick 预设 - 快速预览
+- **适用场景**: 快速预览、大批量处理
+- **核心特点**: 时间模式 + 3列布局 + 300秒间隔
+- **优势**: 处理速度优先，适合快速了解视频内容
+
+### Dynamic 预设 - 动态内容
+- **适用场景**: 动作频繁、变化密集的视频内容
+- **核心特点**: 智能模式 + 6列布局 + 15-45秒间隔 + 92%质量
+- **优势**: 密集捕获动作变化，确保不遗漏重要场景
+
+## �🏗️ 项目结构
 
 ```
 shot-stitch/
@@ -205,7 +234,8 @@ shot-stitch/
 ├── presets/                # 配置预设
 │   ├── movie.conf          # 电影预设
 │   ├── lecture.conf        # 讲座预设
-│   └── quick.conf          # 快速预设
+│   ├── quick.conf          # 快速预设
+│   └── dynamic.conf        # 动态内容预设
 ├── font/                   # 字体文件
 └── README.md               # 本文件
 ```

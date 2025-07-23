@@ -55,6 +55,7 @@ docker run --rm -v $(pwd):/data dreamytzk/shot-stitch:latest \
 | `movie` | 电影、电视剧 | `--preset movie` |
 | `lecture` | 讲座、会议 | `--preset lecture` |
 | `quick` | 快速预览 | `--preset quick` |
+| `dynamic` | 动态内容 | `--preset dynamic` |
 
 ### 卷挂载
 

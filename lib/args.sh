@@ -102,7 +102,7 @@ print_help() {
     echo "  --format <webp|jpg|png> 输出格式 (默认: webp)"
     echo "  --font <path>           字体文件路径 (默认: ./font/LXGWWenKai-Medium.ttf)"
     echo "  --config <path>         指定配置文件路径"
-    echo "  --preset <name>         使用预设配置 (movie|lecture|quick)"
+    echo "  --preset <name>         使用预设配置 (movie|lecture|quick|dynamic)"
     echo "  --html                  生成HTML报告"
     echo "  --html-title <title>    HTML报告标题"
     echo "  --html-theme <theme>    HTML报告主题 (modern|classic|dark)"
@@ -284,7 +284,7 @@ parse_arguments() {
         if ! load_and_validate_config "$preset_config" "preset"; then
             echo -e "${RED}错误: 预设配置加载失败: $PRESET_NAME${NC}"
             echo -e "${YELLOW}可用预设:${NC}"
-            echo -e "${YELLOW}  movie, lecture, quick${NC}"
+            echo -e "${YELLOW}  movie, lecture, quick, dynamic${NC}"
             exit 1
         fi
     elif [ -n "$CONFIG_FILE" ]; then

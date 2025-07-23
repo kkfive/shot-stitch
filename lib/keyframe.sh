@@ -19,31 +19,37 @@ detect_keyframes() {
     local file_size=$(stat -f%z "$video_file" 2>/dev/null || stat -c%s "$video_file" 2>/dev/null || echo 0)
     local duration_seconds=$(echo "$DURATION" | awk -F: '{print ($1 * 3600) + ($2 * 60) + $3}' 2>/dev/null || echo 0)
 
-    # 更智能的超时计算：基础120秒 + 文件大小因子 + 时长因子
-    local timeout_seconds=120  # 提高基础时间
+    # 更智能的超时计算：基础180秒 + 文件大小因子 + 时长因子
+    local timeout_seconds=180  # 提高基础时间
 
-    # 根据文件大小调整
+    # 根据文件大小调整（更激进的时间分配）
     if [ "$file_size" -gt 1073741824 ]; then  # 大于1GB
-        timeout_seconds=$((timeout_seconds + 120))  # 增加120秒
+        timeout_seconds=$((timeout_seconds + 300))  # 增加300秒
     fi
     if [ "$file_size" -gt 3221225472 ]; then  # 大于3GB
-        timeout_seconds=$((timeout_seconds + 180))  # 再增加180秒
+        timeout_seconds=$((timeout_seconds + 600))  # 再增加600秒
     fi
     if [ "$file_size" -gt 5368709120 ]; then  # 大于5GB
-        timeout_seconds=$((timeout_seconds + 240))  # 再增加240秒
+        timeout_seconds=$((timeout_seconds + 900))  # 再增加900秒
+    fi
+    if [ "$file_size" -gt 8589934592 ]; then  # 大于8GB
+        timeout_seconds=$((timeout_seconds + 1200))  # 再增加1200秒
     fi
 
-    # 根据时长调整
+    # 根据时长调整（更激进的时间分配）
     if [ "$duration_seconds" -gt 3600 ]; then  # 大于1小时
-        timeout_seconds=$((timeout_seconds + 120))  # 增加120秒
+        timeout_seconds=$((timeout_seconds + 300))  # 增加300秒
     fi
     if [ "$duration_seconds" -gt 7200 ]; then  # 大于2小时
-        timeout_seconds=$((timeout_seconds + 180))  # 再增加180秒
+        timeout_seconds=$((timeout_seconds + 600))  # 再增加600秒
+    fi
+    if [ "$duration_seconds" -gt 10800 ]; then  # 大于3小时
+        timeout_seconds=$((timeout_seconds + 900))  # 再增加900秒
     fi
 
-    # 设置最大超时限制（避免无限等待）
-    if [ "$timeout_seconds" -gt 900 ]; then  # 最大15分钟
-        timeout_seconds=900
+    # 设置最大超时限制（大幅提高到60分钟）
+    if [ "$timeout_seconds" -gt 3600 ]; then  # 最大60分钟
+        timeout_seconds=3600
     fi
 
     echo "预计检测时间: 最多${timeout_seconds}秒（根据文件大小和时长调整）"

@@ -57,3 +57,6 @@ node_modules/
 
 tests
 temp
+
+.github
+temp_test

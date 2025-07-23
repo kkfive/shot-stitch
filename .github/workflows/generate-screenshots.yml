@@ -1,0 +1,204 @@
+name: 生成视频截图
+
+on:
+  workflow_dispatch:
+    inputs:
+      video_url:
+        description: '视频 URL'
+        required: true
+        type: string
+      preset:
+        description: '预设模式'
+        required: false
+        default: 'dynamic'
+        type: choice
+        options:
+        - movie
+        - lecture
+        - quick
+        - dynamic
+
+permissions:
+  contents: read
+
+jobs:
+  generate-screenshots:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 检出代码
+      uses: actions/checkout@v4
+    
+    - name: 验证输入
+      run: |
+        if [[ ! "$VIDEO_URL" =~ ^https?:// ]]; then
+          echo "❌ 无效的 URL 格式"
+          exit 1
+        fi
+        echo "✅ URL 验证通过"
+      env:
+        VIDEO_URL: ${{ inputs.video_url }}
+    
+    - name: 设置 Hosts 映射
+      run: |
+        if [ -n "$HOSTS_MAPPING" ]; then
+          echo "🔧 设置 hosts 映射..."
+          echo "$HOSTS_MAPPING" | sudo tee -a /etc/hosts > /dev/null
+          echo "✅ Hosts 映射设置完成"
+        else
+          echo "ℹ️ 未设置 hosts 映射，跳过"
+        fi
+      env:
+        HOSTS_MAPPING: ${{ secrets.HOSTS_MAPPING }}
+    
+    - name: 下载视频
+      run: |
+        mkdir -p video_input
+        
+        echo "⬇️ 正在获取视频资源..."
+        
+        # 使用 curl 替代 wget，更好的进度控制
+        if curl -L --fail --silent --show-error \
+               --connect-timeout 30 --max-time 600 \
+               --user-agent "Mozilla/5.0 (compatible; VideoProcessor/1.0)" \
+               --output video_input/video.mp4 \
+               --write-out "✅ 下载完成 - 大小: %{size_download} 字节 - 用时: %{time_total}s\n" \
+               "$VIDEO_URL"; then
+          
+          # 验证文件并显示友好的大小
+          if [ -f video_input/video.mp4 ] && [ -s video_input/video.mp4 ]; then
+            FILE_SIZE=$(du -h video_input/video.mp4 | cut -f1)
+            echo "📊 文件大小: ${FILE_SIZE}"
+          else
+            echo "❌ 下载的文件无效"
+            exit 1
+          fi
+        else
+          echo "❌ 视频下载失败"
+          exit 1
+        fi
+      env:
+        VIDEO_URL: ${{ inputs.video_url }}
+    
+    - name: 生成截图
+      run: |
+        echo "🎬 开始生成截图..."
+        
+        # 从 URL 中提取文件名
+        VIDEO_FILENAME=$(echo "$VIDEO_URL" | sed 's/.*\///' | sed 's/\?.*$//' | sed 's/\.[^.]*$//')
+        if [ -z "$VIDEO_FILENAME" ]; then
+          VIDEO_FILENAME="video_$(date +%Y%m%d_%H%M%S)"
+        fi
+        VIDEO_FILENAME=$(echo "$VIDEO_FILENAME" | sed 's/[^a-zA-Z0-9_-]/_/g' | sed 's/__*/_/g' | sed 's/^_\|_$//g')
+        
+        echo "📝 视频文件名: $VIDEO_FILENAME"
+        echo "VIDEO_FILENAME=$VIDEO_FILENAME" >> $GITHUB_ENV
+        
+        # 运行 shot-stitch Docker 容器
+        docker run --rm \
+          -v $(pwd)/video_input:/data \
+          dreamytzk/shot-stitch:latest \
+          /data/video.mp4 \
+          --preset ${{ inputs.preset }} \
+          --html \
+          --force
+        
+        # 检查生成的文件
+        SCREENSHOT_COUNT=$(find video_input/ -type f \( -name "*.webp" -o -name "*.jpg" -o -name "*.png" -o -name "*.html" \) ! -name "video.mp4" | wc -l)
+        
+        if [ "$SCREENSHOT_COUNT" -eq 0 ]; then
+          echo "❌ 没有生成任何截图文件"
+          exit 1
+        fi
+        
+        echo "✅ 截图生成完成，共生成 $SCREENSHOT_COUNT 个文件"
+        
+        # 列出生成的文件
+        echo "📊 生成的文件:"
+        find video_input/ -type f \( -name "*.webp" -o -name "*.jpg" -o -name "*.png" -o -name "*.html" \) ! -name "video.mp4" | while read file; do
+          echo "  - $(basename "$file") ($(du -h "$file" | cut -f1))"
+        done
+      env:
+        VIDEO_URL: ${{ inputs.video_url }}
+    
+    - name: 准备 Release 信息
+      run: |
+        TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+        RELEASE_TAG="screenshots-${TIMESTAMP}"
+        RELEASE_NAME="$VIDEO_FILENAME 截图 - $(date '+%Y-%m-%d %H:%M:%S')"
+        
+        echo "TIMESTAMP=$TIMESTAMP" >> $GITHUB_ENV
+        echo "RELEASE_TAG=$RELEASE_TAG" >> $GITHUB_ENV
+        echo "RELEASE_NAME=$RELEASE_NAME" >> $GITHUB_ENV
+        
+        # 创建 Release 描述
+        echo "# 视频截图文件" > release_notes.md
+        echo "" >> release_notes.md
+        echo "**视频文件名**: \`$VIDEO_FILENAME\`" >> release_notes.md
+        echo "**预设模式**: \`${{ inputs.preset }}\`" >> release_notes.md
+        echo "**生成时间**: \`$(date '+%Y-%m-%d %H:%M:%S')\`" >> release_notes.md
+        echo "" >> release_notes.md
+        echo "## 包含文件" >> release_notes.md
+        find video_input/ -type f \( -name "*.webp" -o -name "*.jpg" -o -name "*.png" -o -name "*.html" \) ! -name "video.mp4" | while read file; do
+          echo "- \`$(basename "$file")\` ($(du -h "$file" | cut -f1))" >> release_notes.md
+        done
+        echo "" >> release_notes.md
+        echo "---" >> release_notes.md
+        echo "*由 GitHub Actions 自动生成*" >> release_notes.md
+        
+        echo "✅ Release 信息准备完成"
+    
+    - name: 创建 Release 并上传文件
+      run: |
+        echo "🚀 创建 Release 并上传文件..."
+        
+        # 创建 Release
+        gh release create "$RELEASE_TAG" \
+          --repo "kkfive-action/private-screenshots" \
+          --title "$RELEASE_NAME" \
+          --notes-file release_notes.md
+        
+        echo "✅ Release 创建成功: $RELEASE_TAG"
+        
+        # 上传所有截图文件
+        echo "📤 上传截图文件..."
+        find video_input/ -type f \( -name "*.webp" -o -name "*.jpg" -o -name "*.png" -o -name "*.html" \) ! -name "video.mp4" | while read file; do
+          filename=$(basename "$file")
+          echo "📤 上传: $filename"
+          
+          gh release upload "$RELEASE_TAG" "$file" \
+            --repo "kkfive-action/private-screenshots" \
+            --clobber
+        done
+        
+        echo "✅ 所有文件上传完成"
+        echo "RELEASE_URL=https://github.com/kkfive-action/private-screenshots/releases/tag/$RELEASE_TAG" >> $GITHUB_ENV
+      env:
+        GH_TOKEN: ${{ secrets.PRIVATE_REPO_TOKEN }}
+    
+    - name: 生成下载信息
+      run: |
+        echo "🎉 截图已成功上传到私有仓库!"
+        echo ""
+        echo "📍 私有仓库: kkfive-action/private-screenshots"
+        echo "🏷️  Release 标签: $RELEASE_TAG"
+        echo "🔗 Release 链接: $RELEASE_URL"
+        echo ""
+        echo "📥 下载方式:"
+        echo "1. 访问私有仓库的 Releases 页面"
+        echo "2. 找到标签为 '$RELEASE_TAG' 的 Release"
+        echo "3. 直接下载需要的文件（无需解压）"
+        echo ""
+        echo "📊 可下载的文件:"
+        find video_input/ -type f \( -name "*.webp" -o -name "*.jpg" -o -name "*.png" -o -name "*.html" \) ! -name "video.mp4" | while read file; do
+          echo "  - $(basename "$file") ($(du -h "$file" | cut -f1))"
+        done
+        echo ""
+        echo "🔒 只有私有仓库的协作者可以访问和下载"
+    
+    - name: 清理临时文件
+      if: always()
+      run: |
+        echo "🧹 清理临时文件..."
+        rm -rf video_input/ release_notes.md
+        echo "✅ 清理完成"

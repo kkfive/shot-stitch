@@ -51,22 +51,22 @@ add_timestamp_to_frame() {
         \"$output_file\""
 }
 
-# 智能模式截取视频帧
-extract_frames_smart() {
-    echo -e "${YELLOW}开始智能截取视频帧...${NC}"
+# 场景检测模式截取视频帧
+extract_frames_scene() {
+    echo -e "${YELLOW}开始场景检测截取视频帧...${NC}"
     
-    # 执行场景检测
-    if ! detect_scene_changes "$VIDEO_FILE" "$SCENE_THRESHOLD"; then
+    # 执行自适应场景检测
+    if ! detect_scene_changes_adaptive "$VIDEO_FILE" "$SCENE_THRESHOLD"; then
         echo -e "${YELLOW}场景检测失败，回退到时间间隔模式${NC}"
         extract_frames_time
         return $?
     fi
     
-    # 计算智能时间点
-    calculate_smart_timepoints "$DURATION" "$MIN_INTERVAL" "$MAX_INTERVAL"
-    
+    # 计算场景检测时间点
+    calculate_scene_timepoints "$DURATION" "$MIN_INTERVAL" "$MAX_INTERVAL"
+
     local frame_count=0
-    local timepoints=("${SMART_TIMEPOINTS[@]}")
+    local timepoints=("${SCENE_TIMEPOINTS[@]}")
     
     echo "预计截取 ${#timepoints[@]} 帧"
     
@@ -78,7 +78,7 @@ extract_frames_smart() {
         return 1
     fi
     
-    # 按智能时间点截取帧
+    # 按场景检测时间点截取帧
     local total_timepoints=${#timepoints[@]}
     local current_timepoint=0
     
@@ -176,8 +176,8 @@ extract_frames() {
     if [ "$ENABLE_PARALLEL_PROCESSING" = true ] && [ "$PARALLEL_JOBS" -gt 1 ]; then
         echo -e "${CYAN}启用并行处理模式 (${PARALLEL_JOBS} 进程)${NC}"
         case "$MODE" in
-            "smart")
-                extract_frames_smart_parallel
+            "scene")
+                extract_frames_scene_parallel
                 return $?
                 ;;
             "keyframe")
@@ -192,8 +192,8 @@ extract_frames() {
     else
         echo -e "${CYAN}使用串行处理模式${NC}"
         case "$MODE" in
-            "smart")
-                extract_frames_smart
+            "scene")
+                extract_frames_scene
                 return $?
                 ;;
             "keyframe")

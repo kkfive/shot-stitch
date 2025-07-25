@@ -4,3 +4,5 @@
 *.mkv
 *.wmv
 temp
+.kiro
+tests

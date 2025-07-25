@@ -2,7 +2,7 @@
 # preview.sh - shot stitch
 #
 # Author: DreamyTZK
-# Version: 0.1.0
+# Version: 0.2.0
 # Description: Local video preview image generator
 
 # 获取脚本目录

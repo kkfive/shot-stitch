@@ -17,6 +17,12 @@ on:
         - lecture
         - quick
         - dynamic
+      target_repo:
+        description: '发布到的仓库'
+        required: false
+        default: 'kkfive/shot-stitch'
+        type: string
+      
 
 permissions:
   contents: read
@@ -148,16 +154,19 @@ jobs:
         TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
         RELEASE_TAG="screenshots-${TIMESTAMP}"
         RELEASE_NAME="$VIDEO_FILENAME 截图 - $(date '+%Y-%m-%d %H:%M:%S')"
-        
+        TARGET_REPO="${{ inputs.target_repo }}"
+
         echo "TIMESTAMP=$TIMESTAMP" >> $GITHUB_ENV
         echo "RELEASE_TAG=$RELEASE_TAG" >> $GITHUB_ENV
         echo "RELEASE_NAME=$RELEASE_NAME" >> $GITHUB_ENV
+        echo "TARGET_REPO=$TARGET_REPO" >> $GITHUB_ENV
         
         # 创建 Release 描述
         echo "# 视频截图文件" > release_notes.md
         echo "" >> release_notes.md
         echo "**视频文件名**: \`$VIDEO_FILENAME\`" >> release_notes.md
         echo "**预设模式**: \`${{ inputs.preset }}\`" >> release_notes.md
+        echo "**目标仓库**: \`$TARGET_REPO\`" >> release_notes.md
         echo "**生成时间**: \`$(date '+%Y-%m-%d %H:%M:%S')\`" >> release_notes.md
         echo "" >> release_notes.md
         echo "## 包含文件" >> release_notes.md
@@ -176,7 +185,7 @@ jobs:
         
         # 创建 Release
         gh release create "$RELEASE_TAG" \
-          --repo "kkfive-action/private-screenshots" \
+          --repo "$TARGET_REPO" \
           --title "$RELEASE_NAME" \
           --notes-file release_notes.md
         
@@ -189,25 +198,25 @@ jobs:
           echo "📤 上传: $filename"
           
           gh release upload "$RELEASE_TAG" "$file" \
-            --repo "kkfive-action/private-screenshots" \
+            --repo "$TARGET_REPO" \
             --clobber
         done
         
         echo "✅ 所有文件上传完成"
-        echo "RELEASE_URL=https://github.com/kkfive-action/private-screenshots/releases/tag/$RELEASE_TAG" >> $GITHUB_ENV
+        echo "RELEASE_URL=https://github.com/$TARGET_REPO/releases/tag/$RELEASE_TAG" >> $GITHUB_ENV
       env:
         GH_TOKEN: ${{ secrets.PRIVATE_REPO_TOKEN }}
     
     - name: 生成下载信息
       run: |
-        echo "🎉 截图已成功上传到私有仓库!"
+        echo "🎉 截图已成功上传到目标仓库!"
         echo ""
-        echo "📍 私有仓库: kkfive-action/private-screenshots"
+        echo "📍 目标仓库: $TARGET_REPO"
         echo "🏷️  Release 标签: $RELEASE_TAG"
         echo "🔗 Release 链接: $RELEASE_URL"
         echo ""
         echo "📥 下载方式:"
-        echo "1. 访问私有仓库的 Releases 页面"
+        echo "1. 访问目标仓库的 Releases 页面"
         echo "2. 找到标签为 '$RELEASE_TAG' 的 Release"
         echo "3. 直接下载需要的文件（无需解压）"
         echo ""
@@ -216,7 +225,7 @@ jobs:
           echo "  - $(basename "$file") ($(du -h "$file" | cut -f1))"
         done
         echo ""
-        echo "🔒 只有私有仓库的协作者可以访问和下载"
+        echo "🔒 只有目标仓库的协作者可以访问和下载"
     
     - name: 清理临时文件
       if: always()

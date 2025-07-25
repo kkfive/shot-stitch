@@ -1,0 +1,2221 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>发布资源预览器 - Shot Stitch v0.3.0</title>
+    <!-- Viewer.js CSS -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/viewerjs@1.11.6/dist/viewer.min.css">
+    <!-- StreamSaver.js for large file handling -->
+    <script src="https://cdn.jsdelivr.net/npm/streamsaver@2.0.6/StreamSaver.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            line-height: 1.6; color: #333; background: #f5f7fa;
+            min-height: 100vh;
+            overflow-y: scroll; /* 始终显示垂直滚动条，防止闪动 */
+        }
+        
+        .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white; padding: 30px 0; text-align: center; margin-bottom: 30px;
+            border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 { font-size: 2.2em; margin-bottom: 8px; }
+        .header p { font-size: 1.1em; opacity: 0.9; }
+        
+        .main-content {
+            display: grid;
+            grid-template-columns: 350px 1fr;
+            gap: 30px;
+            align-items: start;
+        }
+        
+        .control-panel {
+            background: white;
+            padding: 25px;
+            border-radius: 10px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.08);
+            position: sticky;
+            top: 20px;
+        }
+        
+        .input-section {
+            margin-bottom: 25px;
+        }
+        
+        .input-section h3 {
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 1.2em;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .input-group {
+            margin-bottom: 15px;
+        }
+        
+        .input-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 600;
+            color: #555;
+        }
+        
+        .input-group input, .input-group select {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #e1e5e9;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+            background: white;
+        }
+
+        .input-group input:focus, .input-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .input-group small {
+            display: block;
+            margin-top: 5px;
+            font-size: 12px;
+            color: #6c757d;
+        }
+
+        .input-group select option {
+            padding: 8px;
+        }
+
+        /* 资源选择器作为标题样式 */
+        .asset-selector {
+            background: linear-gradient(135deg, #f8f9ff 0%, #e8f0ff 100%);
+            border-bottom: 1px solid #d1e7ff;
+        }
+
+        .asset-selector-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .download-btn {
+            background: #28a745;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            padding: 12px 20px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s;
+            white-space: nowrap; /* 防止文字换行 */
+        }
+
+        .download-btn:hover {
+            background: #218838;
+            transform: scale(1.05);
+        }
+
+        .download-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        #assetSelect {
+            flex: 1;
+            background: white;
+            border: 2px solid #667eea;
+            border-radius: 6px;
+            padding: 12px;
+            font-weight: 500;
+            font-size: 14px;
+            min-width: 0; /* 允许收缩 */
+        }
+
+        #assetSelect:focus {
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+
+
+        /* 预览区域loading动画 */
+        .preview-loading {
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+        
+        .btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.3s;
+            width: 100%;
+            margin-bottom: 10px;
+        }
+        
+        .btn:hover {
+            background: #5a6fd8;
+            transform: translateY(-1px);
+        }
+        
+        .btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .btn-secondary {
+            background: #6c757d;
+        }
+        
+        .btn-secondary:hover {
+            background: #5a6268;
+        }
+        
+        .preview-area {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.08);
+            overflow: hidden;
+            min-height: 600px; /* 增加最小高度 */
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .preview-header {
+            background: #f8f9fa;
+            padding: 20px;
+            border-bottom: 1px solid #e9ecef;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .preview-title {
+            font-size: 1.3em;
+            font-weight: 600;
+            color: #333;
+            flex: 1;
+            min-width: 0; /* 允许flex项目收缩到内容宽度以下 */
+
+            /* 文本截断样式 */
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+
+            /* 悬浮提示 */
+            cursor: help;
+        }
+        
+
+
+        /* 自定义Viewer.js样式 */
+        .viewer-container {
+            background-color: rgba(0, 0, 0, 0.9);
+        }
+
+        .viewer-title {
+            color: #fff;
+            font-size: 16px;
+            font-weight: 600;
+        }
+        
+        .preview-content {
+            padding: 30px;
+            text-align: center;
+            min-height: 500px; /* 固定最小高度，防止闪动 */
+            flex: 1; /* 占用剩余空间 */
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            overflow: auto; /* 内容溢出时滚动 */
+        }
+        
+        .preview-placeholder {
+            color: #6c757d;
+            font-size: 1.1em;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 15px;
+        }
+        
+        .preview-placeholder .icon {
+            font-size: 3em;
+            opacity: 0.5;
+        }
+        
+        .preview-image {
+            max-width: 100%;
+            max-height: 70vh;
+            border-radius: 8px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            transition: transform 0.3s;
+        }
+        
+        .preview-image:hover {
+            transform: scale(1.02);
+        }
+        
+
+        
+        .loading {
+            display: none;
+            color: #667eea;
+            font-size: 1.1em;
+        }
+        
+
+        
+        .tabs {
+            display: flex;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #e9ecef;
+        }
+        
+        .tab {
+            padding: 10px 20px;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: all 0.3s;
+            font-weight: 600;
+        }
+        
+        .tab.active {
+            color: #667eea;
+            border-bottom-color: #667eea;
+        }
+        
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        @media (max-width: 1024px) {
+            .main-content {
+                grid-template-columns: 1fr;
+                gap: 20px;
+            }
+            
+            .control-panel {
+                position: static;
+            }
+        }
+        
+        @media (max-width: 768px) {
+            .container { padding: 10px; }
+            .header h1 { font-size: 1.8em; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🖼️ 发布资源预览器</h1>
+            <p>预览你的视频截图和发布资源 - Shot Stitch v0.3.0</p>
+        </div>
+
+        <div class="main-content">
+            <div class="control-panel">
+                <div class="tabs">
+                    <div class="tab active" onclick="switchTab('url')">🔗 URL</div>
+                    <div class="tab" onclick="switchTab('github')">📁 GitHub</div>
+                </div>
+
+                <!-- URL输入标签页 -->
+                <div id="url-tab" class="tab-content active">
+                    <div class="input-section">
+                        <h3>🔗 图片URL预览</h3>
+                        <div class="input-group">
+                            <label for="imageUrl">图片链接</label>
+                            <input type="url" id="imageUrl" placeholder="https://example.com/image.jpg">
+                        </div>
+                        <button class="btn" onclick="loadImageFromUrl()">加载预览</button>
+                    </div>
+                </div>
+
+                <!-- GitHub输入标签页 -->
+                <div id="github-tab" class="tab-content">
+                    <div class="input-section">
+                        <h3>📁 GitHub发布预览</h3>
+                        <div class="input-group">
+                            <label for="githubToken">GitHub Token (推荐)</label>
+                            <input type="password" id="githubToken" placeholder="ghp_xxxxxxxxxxxx">
+                        </div>
+
+
+                        <div class="input-group">
+                            <label for="repoOwner">仓库所有者</label>
+                            <input type="text" id="repoOwner" placeholder="username">
+                        </div>
+                        <div class="input-group">
+                            <label for="repoName">仓库名称</label>
+                            <input type="text" id="repoName" placeholder="repository-name">
+                        </div>
+                        <button class="btn" onclick="loadGitHubReleases()">获取发布列表</button>
+
+                        <div class="input-group" id="releaseSelectGroup" style="display: none;">
+                            <label for="releaseSelect">选择发布版本</label>
+                            <select id="releaseSelect" onchange="onReleaseSelected()">
+                                <option value="">请选择发布版本...</option>
+                            </select>
+                        </div>
+
+
+
+
+                    </div>
+                </div>
+
+
+
+                <div class="loading" id="loading">
+                    ⏳ 加载中...
+                </div>
+            </div>
+
+            <div class="preview-area">
+                <!-- GitHub资源选择器作为标题 -->
+                <div class="preview-header asset-selector" id="assetSelectGroup" style="display: none;">
+                    <div class="asset-selector-content">
+                        <select id="assetSelect" onchange="onAssetSelected()">
+                            <option value="">📷 选择图片文件...</option>
+                        </select>
+                        <button class="download-btn" onclick="downloadCurrentAsset()" id="downloadAssetBtn" disabled title="下载图片">📥 下载</button>
+                    </div>
+                </div>
+
+                <!-- 默认标题（无选择器时显示） -->
+                <div class="preview-header" id="defaultHeader">
+                    <div class="preview-title">预览区域</div>
+                </div>
+                <div class="preview-content" id="previewContent">
+                    <div class="preview-placeholder">
+                        <div class="icon">🖼️</div>
+                        <div>选择图片URL或GitHub仓库开始预览</div>
+                        <div style="font-size: 0.9em; opacity: 0.7;">支持 JPG, PNG, WebP, GIF 等格式</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Viewer.js JavaScript -->
+    <script src="https://cdn.jsdelivr.net/npm/viewerjs@1.11.6/dist/viewer.min.js"></script>
+    <script>
+        let currentImage = null;
+        let githubReleases = [];
+        let selectedRelease = null;
+        let releaseAssets = [];
+        let viewer = null;
+
+        // 缓存和竞态控制
+        let imageCache = new Map(); // 图片缓存
+        let currentLoadingRequest = null; // 当前加载请求的标识
+        let requestCounter = 0; // 请求计数器
+
+        // 标签页切换
+        function switchTab(tabName) {
+            // 隐藏所有标签页内容
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.remove('active');
+            });
+            
+            // 移除所有标签的active类
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // 显示选中的标签页
+            document.getElementById(tabName + '-tab').classList.add('active');
+            event.target.classList.add('active');
+        }
+
+        // 显示加载状态
+        function showLoading() {
+            document.getElementById('loading').style.display = 'block';
+        }
+
+        // 隐藏加载状态
+        function hideLoading() {
+            document.getElementById('loading').style.display = 'none';
+        }
+
+        // 简化的错误处理（仅在控制台输出）
+        function showError(message) {
+            console.error('Error:', message);
+            hideLoading();
+        }
+
+        // 简化的成功处理（仅在控制台输出）
+        function showSuccess(message) {
+            console.log('Success:', message);
+            hideLoading();
+        }
+
+        // 在预览区域显示loading状态
+        function showPreviewLoading(filename, requestId) {
+            const previewContent = document.getElementById('previewContent');
+            previewContent.innerHTML = `
+                <div class="preview-placeholder preview-loading">
+                    <div class="icon" style="font-size: 4em;">⏳</div>
+                    <div class="text" style="font-size: 18px; margin: 20px 0;">正在加载图片...</div>
+                    <div style="color: #667eea; font-size: 14px; font-weight: 500;">
+                        📷 ${filename}
+                    </div>
+                    <div style="margin-top: 15px; color: #999; font-size: 12px;">
+                        请稍候，正在从GitHub获取资源... (请求ID: ${requestId})
+                    </div>
+                </div>
+            `;
+
+
+        }
+
+        // 检查请求是否仍然有效（解决竞态问题）
+        function isRequestValid(requestId) {
+            return currentLoadingRequest === requestId;
+        }
+
+        // 显示缓存的图片
+        function displayCachedImage(cachedImage) {
+            currentImage = cachedImage;
+
+            const previewContent = document.getElementById('previewContent');
+
+
+            previewContent.innerHTML = `
+                <div class="image-container">
+                    <img src="${cachedImage.url}" alt="预览图片" class="preview-image" id="previewImg" data-original="${cachedImage.url}">
+                </div>
+            `;
+
+            hideLoading();
+            showSuccess(`图片加载成功！(从缓存)\n文件: ${cachedImage.filename}\n大小: ${cachedImage.size}`);
+            enableControls();
+            initViewer();
+        }
+
+        // 将图片添加到缓存
+        function addToCache(asset, imageData) {
+            const cacheKey = `${asset.id}_${asset.name}`;
+            imageCache.set(cacheKey, imageData);
+        }
+
+        // 清除图片缓存
+        function clearImageCache() {
+            imageCache.clear();
+        }
+
+
+
+        // 从URL加载图片
+        function loadImageFromUrl() {
+            const url = document.getElementById('imageUrl').value.trim();
+            
+            if (!url) {
+                showError('请输入图片URL');
+                return;
+            }
+
+            if (!isValidImageUrl(url)) {
+                showError('请输入有效的图片URL');
+                return;
+            }
+
+            showLoading();
+            loadImage(url);
+        }
+
+        // 验证图片URL或文件名
+        function isValidImageUrl(urlOrFilename) {
+            // 如果是完整URL，验证URL格式
+            try {
+                new URL(urlOrFilename);
+                return /\.(jpg|jpeg|png|gif|webp|bmp|svg)(\?.*)?$/i.test(urlOrFilename);
+            } catch {
+                // 如果不是URL，当作文件名处理
+                return /\.(jpg|jpeg|png|gif|webp|bmp|svg)$/i.test(urlOrFilename);
+            }
+        }
+
+        // 加载图片
+        function loadImage(url, filename = '') {
+            const img = new Image();
+            
+            img.onload = function() {
+                currentImage = {
+                    url: url,
+                    filename: filename || getFilenameFromUrl(url),
+                    width: this.naturalWidth,
+                    height: this.naturalHeight,
+                    size: 'Unknown'
+                };
+                
+                displayImage(this);
+                hideLoading();
+                showSuccess('图片加载成功！');
+                enableControls();
+            };
+            
+            img.onerror = function() {
+                showError('图片加载失败，请检查URL是否正确');
+            };
+            
+            img.src = url;
+        }
+
+        // 从URL获取文件名
+        function getFilenameFromUrl(url) {
+            try {
+                const pathname = new URL(url).pathname;
+                return pathname.split('/').pop() || 'image';
+            } catch {
+                return 'image';
+            }
+        }
+
+
+
+        // 显示图片
+        function displayImage(img) {
+            const previewContent = document.getElementById('previewContent');
+            const previewTitle = document.getElementById('previewTitle');
+
+            previewContent.innerHTML = `
+                <div class="image-container">
+                    <img src="${img.src}" alt="预览图片" class="preview-image" id="previewImg" data-original="${img.src}">
+                </div>
+            `;
+
+
+
+            // 初始化Viewer.js
+            initViewer();
+        }
+
+        // 初始化Viewer.js
+        function initViewer() {
+            const imageElement = document.getElementById('previewImg');
+            if (imageElement && viewer) {
+                viewer.destroy();
+            }
+
+            if (imageElement) {
+                viewer = new Viewer(imageElement, {
+                    inline: false,
+                    button: true,
+                    navbar: false,
+                    title: function(image) {
+                        return currentImage ? currentImage.filename : '';
+                    },
+                    toolbar: {
+                        zoomIn: 1,
+                        zoomOut: 1,
+                        oneToOne: 1,
+                        reset: 1,
+                        prev: 0,
+                        play: 0,
+                        next: 0,
+                        rotateLeft: 1,
+                        rotateRight: 1,
+                        flipHorizontal: 1,
+                        flipVertical: 1
+                    },
+                    tooltip: true,
+                    movable: true,
+                    zoomable: true,
+                    rotatable: true,
+                    scalable: true,
+                    transition: true,
+                    fullscreen: true,
+                    keyboard: true,
+                    backdrop: true,
+                    loading: true,
+                    loop: false,
+                    interval: 5000,
+                    minWidth: 200,
+                    minHeight: 100,
+                    zoomRatio: 0.1,
+                    minZoomRatio: 0.01,
+                    maxZoomRatio: 100,
+                    zIndex: 2015,
+                    zIndexInline: 0,
+                    url: 'data-original',
+                    container: document.body,
+                    filter: null,
+                    toggleOnDblclick: true,
+                    ready: function() {},
+                    show: function() {},
+                    shown: function() {},
+                    hide: function() {},
+                    hidden: function() {}
+                });
+            }
+        }
+
+        // 启用控制按钮
+        function enableControls() {
+            const downloadBtn = document.getElementById('downloadAssetBtn');
+            if (downloadBtn) downloadBtn.disabled = false;
+        }
+
+        // 禁用控制按钮
+        function disableControls() {
+            const downloadBtn = document.getElementById('downloadAssetBtn');
+            if (downloadBtn) downloadBtn.disabled = true;
+        }
+
+        // 下载当前选中的资源（跳转到GitHub下载链接）
+        function downloadCurrentAsset() {
+            const assetSelect = document.getElementById('assetSelect');
+            const selectedIndex = assetSelect.value;
+
+            if (selectedIndex === '' || !releaseAssets[selectedIndex]) {
+                showError('请先选择要下载的图片文件');
+                return;
+            }
+
+            const asset = releaseAssets[selectedIndex];
+            // 直接在新标签页打开GitHub的下载链接
+            window.open(asset.browser_download_url, '_blank');
+            showSuccess(`开始下载: ${asset.name}`);
+        }
+
+
+
+
+
+
+
+        // 清空预览
+        function clearPreview() {
+            const previewContent = document.getElementById('previewContent');
+            const previewTitle = document.getElementById('previewTitle');
+
+            // 清理blob URL，避免内存泄漏
+            if (currentImage) {
+                if (currentImage.blobUrl && currentImage.isBlobUrl) {
+                    URL.revokeObjectURL(currentImage.blobUrl);
+                }
+                // Data URL不需要清理，会被垃圾回收器自动处理
+            }
+
+            previewContent.innerHTML = `
+                <div class="preview-placeholder">
+                    <div class="icon">🖼️</div>
+                    <div>选择图片URL或GitHub仓库开始预览</div>
+                    <div style="font-size: 0.9em; opacity: 0.7;">支持 JPG, PNG, WebP, GIF 等格式</div>
+                </div>
+            `;
+
+
+            currentImage = null;
+
+            // 销毁viewer实例
+            if (viewer) {
+                viewer.destroy();
+                viewer = null;
+            }
+
+            disableControls();
+        }
+
+        // GitHub发布相关功能
+        function loadGitHubReleases() {
+            // 清空缓存
+            clearImageCache();
+
+            const token = document.getElementById('githubToken').value.trim();
+            const owner = document.getElementById('repoOwner').value.trim();
+            const repo = document.getElementById('repoName').value.trim();
+
+            if (!owner || !repo) {
+                showError('请输入仓库所有者和仓库名称');
+                return;
+            }
+
+            showLoading();
+
+            // 构建GitHub Releases API URL
+            const apiUrl = `https://api.github.com/repos/${owner}/${repo}/releases`;
+
+            const headers = {
+                'Accept': 'application/vnd.github.v3+json'
+            };
+
+            if (token) {
+                headers['Authorization'] = `bearer ${token}`;
+            }
+
+            fetch(apiUrl, { headers })
+                .then(response => {
+                    if (!response.ok) {
+                        if (response.status === 404) {
+                            throw new Error(`仓库不存在、无访问权限或没有发布版本\n\n请检查:\n1. 仓库名称是否正确: ${owner}/${repo}\n2. 仓库是否为公开仓库\n3. 仓库是否有发布版本(releases)\n4. 如果是私有仓库，请提供有效的GitHub Token`);
+                        } else if (response.status === 403) {
+                            throw new Error('API访问受限\n\n可能原因:\n1. API调用频率限制\n2. 需要GitHub Token访问私有仓库\n3. Token权限不足\n\n建议: 等待几分钟后重试，或提供有效的GitHub Token');
+                        }
+                        throw new Error(`GitHub API错误: ${response.status} ${response.statusText}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (!Array.isArray(data) || data.length === 0) {
+                        showError('该仓库没有发布版本');
+                        return;
+                    }
+
+                    githubReleases = data;
+                    populateReleaseSelect();
+                    hideLoading();
+                    showSuccess(`找到 ${data.length} 个发布版本`);
+                })
+                .catch(error => {
+                    showError('获取GitHub发布失败: ' + error.message);
+                });
+        }
+
+        function populateReleaseSelect() {
+            const releaseSelect = document.getElementById('releaseSelect');
+            const releaseSelectGroup = document.getElementById('releaseSelectGroup');
+
+            // 清空现有选项
+            releaseSelect.innerHTML = '<option value="">请选择发布版本...</option>';
+
+            // 添加发布选项
+            githubReleases.forEach((release, index) => {
+                const option = document.createElement('option');
+                option.value = index;
+                option.textContent = `${release.tag_name} - ${release.name || '未命名'} ${release.prerelease ? '(预发布)' : ''}`;
+                releaseSelect.appendChild(option);
+            });
+
+            // 显示发布选择器
+            releaseSelectGroup.style.display = 'block';
+        }
+
+        function onReleaseSelected() {
+            const releaseSelect = document.getElementById('releaseSelect');
+            const selectedIndex = releaseSelect.value;
+
+            if (selectedIndex === '') {
+                hideAssetSelect();
+                return;
+            }
+
+            selectedRelease = githubReleases[selectedIndex];
+
+            // 过滤图片资源
+            releaseAssets = selectedRelease.assets.filter(asset =>
+                /\.(jpg|jpeg|png|gif|webp|bmp|svg)$/i.test(asset.name)
+            );
+
+            if (releaseAssets.length === 0) {
+                const allAssetNames = selectedRelease.assets.map(a => a.name).join(', ');
+                showError(`该发布版本中没有图片资源\n\n可用文件: ${allAssetNames || '无文件'}\n\n支持的图片格式: JPG, PNG, GIF, WebP, BMP, SVG`);
+                hideAssetSelect();
+                return;
+            }
+
+            populateAssetSelect();
+            if (releaseAssets.length === 1) {
+                showSuccess(`发布 ${selectedRelease.tag_name} 中找到 1 个图片资源，已自动预览`);
+            } else {
+                showSuccess(`发布 ${selectedRelease.tag_name} 中找到 ${releaseAssets.length} 个图片资源，请选择要预览的图片`);
+            }
+        }
+
+        function populateAssetSelect() {
+            const assetSelect = document.getElementById('assetSelect');
+            const assetSelectGroup = document.getElementById('assetSelectGroup');
+            const defaultHeader = document.getElementById('defaultHeader');
+
+            // 清空现有选项
+            assetSelect.innerHTML = '<option value="">� 选择图片文件...</option>';
+
+            // 添加资源选项，保存asset的完整信息
+            releaseAssets.forEach((asset, index) => {
+                const option = document.createElement('option');
+                option.value = index;
+                option.dataset.assetId = asset.id; // 保存asset ID
+                option.dataset.assetUrl = asset.url; // 保存asset API URL
+                const sizeText = formatFileSize(asset.size);
+                option.textContent = `${asset.name} (${sizeText})`;
+                assetSelect.appendChild(option);
+            });
+
+            // 显示资源选择器，隐藏默认标题
+            assetSelectGroup.style.display = 'block';
+            defaultHeader.style.display = 'none';
+
+            // 如果只有一个图片，自动选择并预览
+            if (releaseAssets.length === 1) {
+                assetSelect.value = '0';
+                onAssetSelected();
+            }
+        }
+
+        function onAssetSelected() {
+            const assetSelect = document.getElementById('assetSelect');
+            const selectedIndex = assetSelect.value;
+
+            if (selectedIndex !== '' && releaseAssets[selectedIndex]) {
+                const asset = releaseAssets[selectedIndex];
+                const cacheKey = `${asset.id}_${asset.name}`;
+
+                // 检查缓存
+                if (imageCache.has(cacheKey)) {
+                    console.log('从缓存加载图片:', asset.name);
+                    const cachedImage = imageCache.get(cacheKey);
+                    displayCachedImage(cachedImage);
+                    return;
+                }
+
+                // 立即预览选中的资源
+                previewSelectedAsset();
+            } else {
+                // 如果没有选择，清空预览区域
+                clearPreview();
+            }
+        }
+
+        function previewSelectedAsset() {
+            const assetSelect = document.getElementById('assetSelect');
+            const selectedIndex = assetSelect.value;
+
+            if (selectedIndex === '' || !releaseAssets[selectedIndex]) {
+                return; // 静默返回，不显示错误
+            }
+
+            const asset = releaseAssets[selectedIndex];
+            const token = document.getElementById('githubToken').value.trim();
+
+            // 生成新的请求ID，用于竞态控制
+            const requestId = ++requestCounter;
+            currentLoadingRequest = requestId;
+
+            // 在预览区域显示loading状态
+            showPreviewLoading(asset.name, requestId);
+
+            // 检查是否是图片文件
+            if (!isValidImageUrl(asset.name)) {
+                showError('选中的文件不是支持的图片格式');
+                return;
+            }
+
+
+
+            // 检查环境和token情况，选择最佳加载方式
+            const isHttpContext = window.location.protocol === 'http:';
+            const isFileContext = window.location.protocol === 'file:';
+
+            if (token && !isHttpContext) {
+                // 有token且非HTTP环境：优先使用GitHub Assets API
+                loadAssetWithAPI(asset, token, requestId);
+            } else if (isHttpContext && token) {
+                // HTTP环境下即使有token也可能遇到CORS问题，先尝试API，失败后自动回退
+                loadAssetWithAPI(asset, token, requestId);
+            } else {
+                // 无token或file://环境：使用重定向URL方法
+                tryRedirectUrlWithContentType(asset, requestId);
+            }
+        }
+
+        // 获取重定向URL并修改content-type参数（巧妙方案）
+        function tryRedirectUrlWithContentType(asset, requestId) {
+            showLoading();
+
+            // 在HTTP环境下，直接使用browser_download_url而不是API URL
+            const isHttpContext = window.location.protocol === 'http:';
+            const urlToTry = isHttpContext ? asset.browser_download_url : asset.url;
+
+            // 先获取重定向的最终URL
+            fetch(urlToTry, {
+                method: 'HEAD', // 只获取头部信息，不下载内容
+                redirect: 'follow' // 跟随重定向
+            })
+            .then(response => {
+                // 检查请求是否仍然有效
+                if (!isRequestValid(requestId)) {
+                    console.log('请求已过期，忽略重定向响应:', requestId);
+                    return;
+                }
+
+                const finalUrl = response.url;
+
+                if (finalUrl && finalUrl !== urlToTry) {
+                    // 修改URL中的response-content-type参数
+                    const modifiedUrl = modifyContentTypeInUrl(finalUrl, asset.name);
+                    // 使用修改后的URL加载图片
+                    loadImageFromModifiedUrl(modifiedUrl, asset, requestId);
+                } else {
+                    // 没有重定向，回退到原方案
+                    tryDirectUrlWithCorsHandling(asset, requestId);
+                }
+            })
+            .catch(error => {
+                // 检查请求是否仍然有效
+                if (!isRequestValid(requestId)) {
+                    console.log('请求已过期，忽略错误:', requestId);
+                    return;
+                }
+                // 回退到原方案
+                tryDirectUrlWithCorsHandling(asset, requestId);
+            });
+        }
+
+        // 修改URL中的response-content-type参数
+        function modifyContentTypeInUrl(url, filename) {
+            try {
+                const urlObj = new URL(url);
+
+                // 根据文件扩展名确定正确的MIME类型
+                const extension = filename.toLowerCase().split('.').pop();
+                const mimeTypes = {
+                    'jpg': 'image/jpeg',
+                    'jpeg': 'image/jpeg',
+                    'png': 'image/png',
+                    'gif': 'image/gif',
+                    'webp': 'image/webp',
+                    'bmp': 'image/bmp',
+                    'svg': 'image/svg+xml'
+                };
+
+                const correctMimeType = mimeTypes[extension] || 'image/jpeg';
+
+                // 修改response-content-type参数
+                urlObj.searchParams.set('response-content-type', correctMimeType);
+                return urlObj.toString();
+            } catch (error) {
+                return url; // 返回原URL
+            }
+        }
+
+        // 使用修改后的URL加载图片
+        function loadImageFromModifiedUrl(url, asset) {
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+
+            img.onload = function() {
+                currentImage = {
+                    url: url,
+                    filename: asset.name + ' (修改Content-Type)',
+                    width: this.naturalWidth,
+                    height: this.naturalHeight,
+                    size: formatFileSize(asset.size),
+                    isModifiedUrl: true
+                };
+
+                displayImage(this);
+                hideLoading();
+                showSuccess(`图片加载成功！\n文件: ${asset.name}\n大小: ${formatFileSize(asset.size)}\n\n通过修改Content-Type参数解决跨域问题！`);
+                enableControls();
+            };
+
+            img.onerror = function() {
+                // 尝试不带CORS
+                const img2 = new Image();
+                img2.onload = function() {
+                    currentImage = {
+                        url: url,
+                        filename: asset.name + ' (修改Content-Type)',
+                        width: this.naturalWidth,
+                        height: this.naturalHeight,
+                        size: formatFileSize(asset.size),
+                        isModifiedUrl: true
+                    };
+
+                    displayImage(this);
+                    hideLoading();
+                    showSuccess(`图片加载成功！\n文件: ${asset.name}\n大小: ${formatFileSize(asset.size)}\n\n通过修改Content-Type参数解决问题！`);
+                    enableControls();
+                };
+
+                img2.onerror = function() {
+                    // 回退到原来的跨域处理方案
+                    tryDirectUrlWithCorsHandling(asset);
+                };
+
+                img2.src = url;
+            };
+
+            img.src = url;
+        }
+
+        // 处理无token情况下的跨域问题（原方案作为回退）
+        function tryDirectUrlWithCorsHandling(asset) {
+            // 方法1: 尝试直接加载（可能成功，取决于GitHub的CORS策略）
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+
+            img.onload = function() {
+                currentImage = {
+                    url: asset.browser_download_url,
+                    filename: asset.name,
+                    width: this.naturalWidth,
+                    height: this.naturalHeight,
+                    size: formatFileSize(asset.size),
+                    isDirectUrl: true
+                };
+
+                displayImage(this);
+                hideLoading();
+                showSuccess(`图片加载成功！\n文件: ${asset.name}\n大小: ${formatFileSize(asset.size)}\n\n直接URL方式`);
+                enableControls();
+            };
+
+            img.onerror = function(event) {
+                // 方法2: 不设置crossOrigin再试一次
+                const img2 = new Image();
+
+                img2.onload = function() {
+                    currentImage = {
+                        url: asset.browser_download_url,
+                        filename: asset.name,
+                        width: this.naturalWidth,
+                        height: this.naturalHeight,
+                        size: formatFileSize(asset.size),
+                        isDirectUrl: true
+                    };
+
+                    displayImage(this);
+                    hideLoading();
+                    showSuccess(`图片加载成功！\n文件: ${asset.name}\n大小: ${formatFileSize(asset.size)}\n\n直接URL方式（无CORS）`);
+                    enableControls();
+                };
+
+                img2.onerror = function() {
+                    hideLoading();
+                    showError(`无法加载图片: ${asset.name}\n\n跨域问题解决方案:\n1. ✅ 提供GitHub Token（推荐）\n2. 🔧 使用HTTPS服务器运行此页面\n3. 🔧 使用file://协议直接打开HTML文件\n4. 使用浏览器扩展禁用CORS\n\n建议: 输入GitHub Token后重试`);
+                };
+
+                img2.src = asset.browser_download_url;
+            };
+
+            img.src = asset.browser_download_url;
+        }
+
+
+
+        // 使用GitHub Assets API下载私有仓库资源
+        function loadAssetWithAPI(asset, token, requestId) {
+            showLoading();
+
+            // 使用GitHub Assets API: GET /repos/{owner}/{repo}/releases/assets/{asset_id}
+            const apiUrl = asset.url; // 这就是正确的assets API URL
+
+            // 尝试最简化的请求配置，避免CORS预检
+            const requestOptions = {
+                method: 'GET',
+                headers: {
+                    'Authorization': `bearer ${token}`,
+                    'Accept': 'application/octet-stream'
+                }
+            };
+
+            fetch(apiUrl, requestOptions)
+            .then(response => {
+                if (!response.ok) {
+                    if (response.status === 401) {
+                        throw new Error('GitHub Token无效或已过期');
+                    } else if (response.status === 403) {
+                        throw new Error('Token权限不足，需要repo权限');
+                    } else if (response.status === 404) {
+                        throw new Error('资源不存在或无访问权限');
+                    } else if (response.status === 405) {
+                        throw new Error('方法不允许 - 这可能是CORS预检请求问题\n\n建议:\n1. 检查token格式是否正确\n2. 确认API URL是否正确\n3. 可能需要使用代理服务器');
+                    }
+                    throw new Error(`GitHub Assets API错误: ${response.status} ${response.statusText}`);
+                }
+
+                // 检查是否发生了重定向，直接处理blob响应
+
+                return response.blob();
+            })
+            .then(blob => {
+                // 检查请求是否仍然有效
+                if (!isRequestValid(requestId)) {
+                    console.log('请求已过期，忽略响应:', requestId);
+                    return;
+                }
+
+                // 验证blob是否有效
+                if (!blob || blob.size === 0) {
+                    throw new Error('接收到空的blob数据');
+                }
+
+                // 检查是否为安全上下文（HTTPS/HTTP）
+                const isSecureContext = window.location.protocol !== 'file:';
+
+                if (isSecureContext) {
+                    // HTTPS/HTTP环境：优先使用Blob URL（性能更好）
+                    loadWithBlobUrl(blob, asset, requestId);
+                } else {
+                    // file://环境：使用Data URL（绕过协议限制）
+                    loadWithDataUrl(blob, asset, requestId);
+                }
+            })
+            .catch(error => {
+                // 检查是否是CORS错误且在HTTP环境下
+                const isCorsError = error.message.includes('Failed to fetch') || error.message.includes('CORS');
+                const isHttpContext = window.location.protocol === 'http:';
+
+                if (isCorsError && isHttpContext) {
+                    hideLoading();
+                    showError(`HTTP环境下GitHub Assets API受CORS限制\n\n建议解决方案:\n1. 🔧 使用HTTPS服务器运行此页面\n2. 🔧 使用file://协议直接打开HTML文件\n3. 🔧 在浏览器中禁用CORS检查\n\n正在尝试其他加载方式...`);
+
+                    // 自动尝试其他方法
+                    setTimeout(() => {
+                        tryRedirectUrlWithContentType(asset);
+                    }, 2000);
+                } else {
+                    showError(`GitHub Assets API加载失败: ${error.message}\n\n请检查:\n1. GitHub Token是否有效且未过期\n2. Token是否有repo权限\n3. 是否有访问该仓库的权限\n4. 网络连接是否正常`);
+                }
+            });
+        }
+
+        // 使用Blob URL加载图片（HTTPS环境推荐）
+        function loadWithBlobUrl(blob, asset, requestId) {
+            try {
+                // 修正MIME类型
+                let correctedBlob = blob;
+                if (blob.type === 'application/octet-stream') {
+                    const extension = asset.name.toLowerCase().split('.').pop();
+                    const mimeTypes = {
+                        'jpg': 'image/jpeg',
+                        'jpeg': 'image/jpeg',
+                        'png': 'image/png',
+                        'gif': 'image/gif',
+                        'webp': 'image/webp',
+                        'bmp': 'image/bmp',
+                        'svg': 'image/svg+xml'
+                    };
+
+                    const correctMimeType = mimeTypes[extension];
+                    if (correctMimeType) {
+                        console.log('Correcting MIME type from', blob.type, 'to', correctMimeType);
+                        correctedBlob = new Blob([blob], { type: correctMimeType });
+                    }
+                }
+
+                // 创建Blob URL
+                const blobUrl = URL.createObjectURL(correctedBlob);
+                console.log('Blob URL created:', blobUrl);
+
+                const img = new Image();
+
+                // 设置crossOrigin以处理可能的跨域问题
+                img.crossOrigin = 'anonymous';
+
+                img.onload = function() {
+                    // 检查请求是否仍然有效
+                    if (!isRequestValid(requestId)) {
+                        console.log('请求已过期，忽略图片加载:', requestId);
+                        URL.revokeObjectURL(blobUrl);
+                        return;
+                    }
+
+                    currentImage = {
+                        url: blobUrl,
+                        filename: asset.name,
+                        width: this.naturalWidth,
+                        height: this.naturalHeight,
+                        size: formatFileSize(blob.size),
+                        blobUrl: blobUrl,
+                        isBlobUrl: true
+                    };
+
+                    // 添加到缓存
+                    addToCache(asset, currentImage);
+
+                    displayImage(this);
+                    hideLoading();
+                    showSuccess(`图片加载成功！\n文件: ${asset.name}\n大小: ${formatFileSize(blob.size)}\n\n使用Blob URL方式（高性能）`);
+                    enableControls();
+                };
+
+                img.onerror = function(event) {
+                    // 检查请求是否仍然有效
+                    if (!isRequestValid(requestId)) {
+                        console.log('请求已过期，忽略错误处理:', requestId);
+                        URL.revokeObjectURL(blobUrl);
+                        return;
+                    }
+
+                    console.log('Blob URL failed, error:', event);
+                    console.log('Falling back to Data URL...');
+                    URL.revokeObjectURL(blobUrl);
+                    loadWithDataUrl(blob, asset, requestId);
+                };
+
+                img.src = blobUrl;
+
+            } catch (error) {
+                console.error('Blob URL creation failed:', error);
+                // 回退到Data URL
+                loadWithDataUrl(blob, asset);
+            }
+        }
+
+        // 使用Data URL加载图片（file://环境或Blob URL失败时的回退方案）
+        function loadWithDataUrl(blob, asset, requestId) {
+
+            const reader = new FileReader();
+
+            reader.onload = function(event) {
+                const dataUrl = event.target.result;
+                console.log('Data URL created, length:', dataUrl.length);
+
+                const img = new Image();
+                img.onload = function() {
+                    // 检查请求是否仍然有效
+                    if (!isRequestValid(requestId)) {
+                        console.log('请求已过期，忽略Data URL加载:', requestId);
+                        return;
+                    }
+
+                    currentImage = {
+                        url: dataUrl,
+                        filename: asset.name,
+                        width: this.naturalWidth,
+                        height: this.naturalHeight,
+                        size: formatFileSize(blob.size),
+                        isDataUrl: true
+                    };
+
+                    // 添加到缓存
+                    addToCache(asset, currentImage);
+
+                    displayImage(this);
+                    hideLoading();
+                    showSuccess(`图片加载成功！\n文件: ${asset.name}\n大小: ${formatFileSize(blob.size)}\n\n使用Data URL方式`);
+                    enableControls();
+                };
+
+                img.onerror = function() {
+                    hideLoading();
+                    showError(`图片加载失败: ${asset.name}\n\n可能原因:\n1. 文件不是有效的图片格式\n2. 文件已损坏\n3. 浏览器不支持该图片格式`);
+                };
+
+                img.src = dataUrl;
+            };
+
+            reader.onerror = function() {
+                hideLoading();
+                showError('无法读取文件数据');
+            };
+
+            reader.onprogress = function(event) {
+                if (event.lengthComputable) {
+                    const progress = (event.loaded / event.total * 100).toFixed(1);
+                    console.log(`Data URL encoding progress: ${progress}%`);
+                }
+            };
+
+            // 读取为Data URL
+            reader.readAsDataURL(blob);
+        }
+
+        // 处理大文件的选项
+        function showLargeFileOptions(blob, asset) {
+            hideLoading();
+
+            // 检查文件头确认是否为有效图片
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const arrayBuffer = e.target.result;
+                const uint8Array = new Uint8Array(arrayBuffer);
+                const header = Array.from(uint8Array.slice(0, 10)).map(b => b.toString(16).padStart(2, '0')).join(' ');
+
+                // 检查常见图片格式的文件头
+                const isJPEG = uint8Array[0] === 0xFF && uint8Array[1] === 0xD8;
+                const isPNG = uint8Array[0] === 0x89 && uint8Array[1] === 0x50 && uint8Array[2] === 0x4E && uint8Array[3] === 0x47;
+                const isGIF = uint8Array[0] === 0x47 && uint8Array[1] === 0x49 && uint8Array[2] === 0x46;
+                const isWebP = uint8Array[8] === 0x57 && uint8Array[9] === 0x45 && uint8Array[10] === 0x42 && uint8Array[11] === 0x50;
+
+                let fileTypeInfo = '未知格式';
+                if (isJPEG) fileTypeInfo = 'JPEG格式 ✅';
+                else if (isPNG) fileTypeInfo = 'PNG格式 ✅';
+                else if (isGIF) fileTypeInfo = 'GIF格式 ✅';
+                else if (isWebP) fileTypeInfo = 'WebP格式 ✅';
+                else fileTypeInfo = '未知格式 ⚠️';
+
+                // 显示大文件处理界面
+                const previewContent = document.getElementById('previewContent');
+
+
+                previewContent.innerHTML = `
+                    <div style="text-align: center; padding: 40px;">
+                        <div style="font-size: 3em; margin-bottom: 20px;">📁</div>
+                        <h3 style="color: #667eea; margin-bottom: 20px;">文件过大，无法在浏览器中预览</h3>
+
+                        <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0; text-align: left; max-width: 400px; margin-left: auto; margin-right: auto;">
+                            <h4 style="color: #667eea; margin-bottom: 15px;">📊 文件信息</h4>
+                            <div style="margin-bottom: 8px;"><strong>文件名:</strong> ${asset.name}</div>
+                            <div style="margin-bottom: 8px;"><strong>大小:</strong> ${(blob.size / 1024 / 1024).toFixed(2)} MB</div>
+                            <div style="margin-bottom: 8px;"><strong>格式:</strong> ${fileTypeInfo}</div>
+                            <div style="margin-bottom: 8px;"><strong>文件头:</strong> ${header}</div>
+                        </div>
+
+                        <div style="margin: 30px 0;">
+                            <button onclick="tryDataUrlPreview('${asset.name}')"
+                                    style="background: #28a745; color: white; border: none; padding: 12px 24px; border-radius: 6px; cursor: pointer; margin: 5px; font-size: 16px;">
+                                🚀 Data URL预览
+                            </button>
+                            <button onclick="createThumbnailPreview('${asset.name}')"
+                                    style="background: #17a2b8; color: white; border: none; padding: 12px 24px; border-radius: 6px; cursor: pointer; margin: 5px; font-size: 16px;">
+                                🖼️ 生成缩略图
+                            </button>
+                            <button onclick="downloadLargeFile('${asset.name}')"
+                                    style="background: #667eea; color: white; border: none; padding: 12px 24px; border-radius: 6px; cursor: pointer; margin: 5px; font-size: 16px;">
+                                📥 下载文件
+                            </button>
+
+                        </div>
+
+                        <div style="color: #666; font-size: 14px; line-height: 1.5;">
+                            <p><strong>建议:</strong></p>
+                            <p>• 下载文件到本地使用专业图片查看器</p>
+                            <p>• 或压缩图片到 &lt;10MB 后重新上传</p>
+                            <p>• 浏览器通常无法处理超过50MB的图片</p>
+                        </div>
+                    </div>
+                `;
+
+                // 保存blob引用供下载使用
+                window.currentLargeFileBlob = blob;
+
+                enableControls();
+                showSuccess(`文件信息获取成功！\n格式: ${fileTypeInfo}\n大小: ${(blob.size / 1024 / 1024).toFixed(2)}MB`);
+            };
+
+            reader.readAsArrayBuffer(blob.slice(0, 20));
+        }
+
+        // 下载大文件
+        function downloadLargeFile(filename) {
+            const blob = window.currentLargeFileBlob;
+            if (!blob) {
+                showError('文件数据不可用，请重新加载');
+                return;
+            }
+
+            try {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                showSuccess('开始下载文件...');
+            } catch (error) {
+                console.error('Download failed:', error);
+                showError('下载失败: ' + error.message);
+            }
+        }
+
+        // 分析图片文件并提供详细信息
+        function analyzeImageFile(filename) {
+            const blob = window.currentLargeFileBlob;
+            if (!blob) {
+                showError('文件数据不可用，请重新加载');
+                return;
+            }
+
+            showLoading();
+            console.log('Starting image file analysis for:', filename);
+
+            // 分析图片文件
+            analyzeImageStructure(blob, filename)
+                .then(analysis => {
+                    hideLoading();
+                    displayImageAnalysis(analysis, filename);
+                    enableControls();
+                })
+                .catch(error => {
+                    console.error('Image analysis failed:', error);
+                    hideLoading();
+                    showError(`文件分析失败: ${error.message}\n\n可能原因:\n1. 文件格式不支持\n2. 文件已损坏\n3. 读取权限问题`);
+                });
+        }
+
+        // 分析图片文件结构
+        async function analyzeImageStructure(blob, filename) {
+            console.log('Analyzing image structure...');
+
+            const analysis = {
+                filename: filename,
+                size: blob.size,
+                type: blob.type,
+                isValid: false,
+                format: 'Unknown',
+                dimensions: null,
+                metadata: {},
+                issues: [],
+                recommendations: []
+            };
+
+            try {
+                // 读取文件头部信息
+                const headerSize = Math.min(blob.size, 64 * 1024); // 读取前64KB
+                const headerBuffer = await blob.slice(0, headerSize).arrayBuffer();
+                const headerBytes = new Uint8Array(headerBuffer);
+
+                // 分析文件格式
+                analysis.format = detectImageFormat(headerBytes);
+                analysis.isValid = analysis.format !== 'Unknown';
+
+                if (analysis.format === 'JPEG') {
+                    const jpegInfo = analyzeJPEGStructure(headerBytes);
+                    analysis.dimensions = jpegInfo.dimensions;
+                    analysis.metadata = jpegInfo.metadata;
+                    analysis.issues = jpegInfo.issues;
+                }
+
+                // 生成建议
+                generateRecommendations(analysis);
+
+                return analysis;
+            } catch (error) {
+                analysis.issues.push(`分析过程出错: ${error.message}`);
+                return analysis;
+            }
+        }
+
+        // 检测图片格式
+        function detectImageFormat(bytes) {
+            // JPEG: FF D8 FF
+            if (bytes[0] === 0xFF && bytes[1] === 0xD8 && bytes[2] === 0xFF) {
+                return 'JPEG';
+            }
+            // PNG: 89 50 4E 47
+            if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4E && bytes[3] === 0x47) {
+                return 'PNG';
+            }
+            // GIF: 47 49 46
+            if (bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46) {
+                return 'GIF';
+            }
+            // WebP: 52 49 46 46 ... 57 45 42 50
+            if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46 &&
+                bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50) {
+                return 'WebP';
+            }
+            return 'Unknown';
+        }
+
+        // 分析JPEG结构
+        function analyzeJPEGStructure(bytes) {
+            const info = {
+                dimensions: null,
+                metadata: {},
+                issues: []
+            };
+
+            try {
+                let offset = 2; // 跳过FF D8
+
+                while (offset < bytes.length - 1) {
+                    // 查找下一个标记
+                    if (bytes[offset] !== 0xFF) {
+                        offset++;
+                        continue;
+                    }
+
+                    const marker = bytes[offset + 1];
+                    offset += 2;
+
+                    // SOF0 (Start of Frame) - 包含图片尺寸信息
+                    if (marker === 0xC0) {
+                        if (offset + 6 < bytes.length) {
+                            const height = (bytes[offset + 3] << 8) | bytes[offset + 4];
+                            const width = (bytes[offset + 5] << 8) | bytes[offset + 6];
+                            info.dimensions = { width, height };
+                            info.metadata.colorComponents = bytes[offset + 7];
+                        }
+                        break;
+                    }
+
+                    // 跳过段数据
+                    if (marker >= 0xE0 && marker <= 0xEF) {
+                        // APP段
+                        const segmentLength = (bytes[offset] << 8) | bytes[offset + 1];
+                        offset += segmentLength;
+                    } else if (marker === 0xDB) {
+                        // 量化表
+                        const segmentLength = (bytes[offset] << 8) | bytes[offset + 1];
+                        offset += segmentLength;
+                    } else if (marker === 0xC4) {
+                        // Huffman表
+                        const segmentLength = (bytes[offset] << 8) | bytes[offset + 1];
+                        offset += segmentLength;
+                    } else {
+                        // 其他段
+                        if (offset + 1 < bytes.length) {
+                            const segmentLength = (bytes[offset] << 8) | bytes[offset + 1];
+                            offset += segmentLength;
+                        } else {
+                            break;
+                        }
+                    }
+                }
+
+                // 检查是否找到了尺寸信息
+                if (!info.dimensions) {
+                    info.issues.push('无法找到图片尺寸信息');
+                }
+
+            } catch (error) {
+                info.issues.push(`JPEG解析错误: ${error.message}`);
+            }
+
+            return info;
+        }
+
+        // 生成建议
+        function generateRecommendations(analysis) {
+            if (!analysis.isValid) {
+                analysis.recommendations.push('文件格式无法识别，可能已损坏');
+                return;
+            }
+
+            if (analysis.size > 100 * 1024 * 1024) {
+                analysis.recommendations.push('文件过大（>100MB），建议压缩后再预览');
+            } else if (analysis.size > 50 * 1024 * 1024) {
+                analysis.recommendations.push('文件较大（>50MB），浏览器可能无法直接预览');
+            }
+
+            if (analysis.dimensions) {
+                const { width, height } = analysis.dimensions;
+                const megapixels = (width * height) / 1000000;
+
+                if (megapixels > 100) {
+                    analysis.recommendations.push(`图片分辨率很高（${megapixels.toFixed(1)}MP），建议降低分辨率`);
+                }
+
+                analysis.recommendations.push('可以尝试使用专业图片查看软件');
+                analysis.recommendations.push('建议下载到本地查看完整图片');
+            }
+
+            if (analysis.issues.length > 0) {
+                analysis.recommendations.push('文件可能存在结构问题，建议重新生成');
+            }
+        }
+
+        // 显示图片分析结果
+        function displayImageAnalysis(analysis, filename) {
+            const previewContent = document.getElementById('previewContent');
+
+
+            const statusIcon = analysis.isValid ? '✅' : '❌';
+            const statusText = analysis.isValid ? '有效' : '无效';
+            const statusColor = analysis.isValid ? '#28a745' : '#dc3545';
+
+            previewContent.innerHTML = `
+                <div style="padding: 30px; text-align: left;">
+                    <div style="text-align: center; margin-bottom: 30px;">
+                        <div style="font-size: 4em; margin-bottom: 15px;">🔍</div>
+                        <h2 style="color: #667eea;">图片文件分析报告</h2>
+                    </div>
+
+                    <div style="background: white; padding: 25px; border-radius: 10px; box-shadow: 0 5px 15px rgba(0,0,0,0.1); margin-bottom: 20px;">
+                        <h3 style="color: #667eea; margin-bottom: 20px; border-bottom: 2px solid #e9ecef; padding-bottom: 10px;">📋 基本信息</h3>
+
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px;">
+                            <div>
+                                <strong>文件名:</strong><br>
+                                <span style="color: #666; word-break: break-all;">${analysis.filename}</span>
+                            </div>
+                            <div>
+                                <strong>文件大小:</strong><br>
+                                <span style="color: #666;">${formatFileSize(analysis.size)}</span>
+                            </div>
+                            <div>
+                                <strong>MIME类型:</strong><br>
+                                <span style="color: #666;">${analysis.type || 'application/octet-stream'}</span>
+                            </div>
+                            <div>
+                                <strong>检测格式:</strong><br>
+                                <span style="color: ${statusColor};">${statusIcon} ${analysis.format}</span>
+                            </div>
+                        </div>
+
+                        ${analysis.dimensions ? `
+                        <div style="margin-bottom: 20px;">
+                            <strong>图片尺寸:</strong><br>
+                            <span style="color: #666; font-size: 1.2em;">${analysis.dimensions.width} × ${analysis.dimensions.height} 像素</span><br>
+                            <span style="color: #888; font-size: 0.9em;">${((analysis.dimensions.width * analysis.dimensions.height) / 1000000).toFixed(1)} 百万像素</span>
+                        </div>
+                        ` : ''}
+
+                        ${Object.keys(analysis.metadata).length > 0 ? `
+                        <div style="margin-bottom: 20px;">
+                            <strong>元数据:</strong><br>
+                            ${Object.entries(analysis.metadata).map(([key, value]) =>
+                                `<span style="color: #666;">${key}: ${value}</span>`
+                            ).join('<br>')}
+                        </div>
+                        ` : ''}
+                    </div>
+
+                    ${analysis.issues.length > 0 ? `
+                    <div style="background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                        <h4 style="margin-bottom: 15px;">⚠️ 发现的问题</h4>
+                        <ul style="margin: 0; padding-left: 20px;">
+                            ${analysis.issues.map(issue => `<li style="margin-bottom: 8px;">${issue}</li>`).join('')}
+                        </ul>
+                    </div>
+                    ` : ''}
+
+                    ${analysis.recommendations.length > 0 ? `
+                    <div style="background: #d4edda; border: 1px solid #c3e6cb; color: #155724; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                        <h4 style="margin-bottom: 15px;">💡 建议</h4>
+                        <ul style="margin: 0; padding-left: 20px;">
+                            ${analysis.recommendations.map(rec => `<li style="margin-bottom: 8px;">${rec}</li>`).join('')}
+                        </ul>
+                    </div>
+                    ` : ''}
+
+                    <div style="background: #e7f3ff; border: 1px solid #b8daff; color: #004085; padding: 20px; border-radius: 8px;">
+                        <h4 style="margin-bottom: 15px;">🔧 技术分析</h4>
+                        <p style="margin-bottom: 10px;"><strong>为什么无法预览？</strong></p>
+                        <ul style="margin: 0; padding-left: 20px;">
+                            <li>文件大小为 ${formatFileSize(analysis.size)}，超出了浏览器的内存限制</li>
+                            <li>浏览器的图片解码器无法处理此特定的JPEG编码</li>
+                            <li>可能使用了特殊的压缩算法或色彩空间</li>
+                            ${analysis.dimensions ? `<li>图片分辨率为 ${analysis.dimensions.width}×${analysis.dimensions.height}，像素数量巨大</li>` : ''}
+                        </ul>
+
+                        <p style="margin: 15px 0 10px 0;"><strong>解决方案：</strong></p>
+                        <ul style="margin: 0; padding-left: 20px;">
+                            <li>下载文件到本地，使用专业图片查看软件（如Photoshop、GIMP）</li>
+                            <li>使用图片压缩工具减小文件大小</li>
+                            <li>转换为更兼容的格式</li>
+                            <li>降低图片分辨率</li>
+                        </ul>
+                    </div>
+                </div>
+            `;
+
+            // 保存分析结果
+            currentImage = {
+                url: null,
+                filename: filename + ' (分析报告)',
+                analysis: analysis,
+                isAnalysis: true
+            };
+        }
+
+
+
+
+
+        // 尝试Data URL预览大文件
+        function tryDataUrlPreview(filename) {
+            const blob = window.currentLargeFileBlob;
+            if (!blob) {
+                showError('文件数据不可用，请重新加载');
+                return;
+            }
+
+            showLoading();
+            console.log('Trying Data URL preview for large file:', filename, 'size:', blob.size);
+
+            // 使用FileReader转换为Data URL
+            const reader = new FileReader();
+
+            reader.onload = function(event) {
+                const dataUrl = event.target.result;
+                console.log('Data URL created for large file, length:', dataUrl.length);
+
+                const img = new Image();
+                img.onload = function() {
+                    currentImage = {
+                        url: dataUrl,
+                        filename: filename + ' (Data URL)',
+                        width: this.naturalWidth,
+                        height: this.naturalHeight,
+                        size: formatFileSize(blob.size),
+                        isDataUrl: true,
+                        isLargeFile: true
+                    };
+
+                    displayImage(this);
+                    hideLoading();
+                    showSuccess(`大文件Data URL预览成功！\n文件: ${filename}\n大小: ${formatFileSize(blob.size)}\n\n证明了问题确实不在于文件大小，而在于协议限制！`);
+                    enableControls();
+                };
+
+                img.onerror = function() {
+                    hideLoading();
+                    showError(`Data URL预览失败: ${filename}\n\n可能原因:\n1. 文件不是有效的图片格式\n2. 文件已损坏\n3. 浏览器不支持该图片格式\n\n但至少证明了Data URL可以处理大文件！`);
+                };
+
+                img.src = dataUrl;
+            };
+
+            reader.onerror = function() {
+                hideLoading();
+                showError('无法读取大文件数据');
+            };
+
+            reader.onprogress = function(event) {
+                if (event.lengthComputable) {
+                    const progress = (event.loaded / event.total * 100).toFixed(1);
+                    console.log(`Reading progress: ${progress}%`);
+                }
+            };
+
+            // 读取为Data URL
+            reader.readAsDataURL(blob);
+        }
+
+        // 生成缩略图预览
+        function createThumbnailPreview(filename) {
+            const blob = window.currentLargeFileBlob;
+            if (!blob) {
+                showError('文件数据不可用，请重新加载');
+                return;
+            }
+
+            showLoading();
+            console.log('Creating thumbnail for large file...');
+
+            // 使用Canvas来创建缩略图
+            const img = new Image();
+
+            // 创建一个较小的blob来测试
+            const chunkSize = Math.min(blob.size, 10 * 1024 * 1024); // 最多读取10MB
+            const smallBlob = blob.slice(0, chunkSize);
+
+            try {
+                const url = URL.createObjectURL(smallBlob);
+
+                img.onload = function() {
+                    console.log('Original image loaded for thumbnail creation');
+
+                    // 创建canvas
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+
+                    // 计算缩略图尺寸（最大800px）
+                    const maxSize = 800;
+                    let { width, height } = this;
+
+                    if (width > height) {
+                        if (width > maxSize) {
+                            height = (height * maxSize) / width;
+                            width = maxSize;
+                        }
+                    } else {
+                        if (height > maxSize) {
+                            width = (width * maxSize) / height;
+                            height = maxSize;
+                        }
+                    }
+
+                    canvas.width = width;
+                    canvas.height = height;
+
+                    // 绘制缩略图
+                    ctx.drawImage(this, 0, 0, width, height);
+
+                    // 转换为blob
+                    canvas.toBlob(function(thumbnailBlob) {
+                        URL.revokeObjectURL(url);
+
+                        if (thumbnailBlob) {
+                            console.log('Thumbnail created:', {
+                                originalSize: blob.size,
+                                thumbnailSize: thumbnailBlob.size,
+                                dimensions: `${width}x${height}`
+                            });
+
+                            const thumbnailUrl = URL.createObjectURL(thumbnailBlob);
+
+                            currentImage = {
+                                url: thumbnailUrl,
+                                filename: filename + ' (缩略图)',
+                                width: width,
+                                height: height,
+                                size: formatFileSize(thumbnailBlob.size),
+                                blobUrl: thumbnailUrl,
+                                isThumbnail: true,
+                                originalSize: formatFileSize(blob.size)
+                            };
+
+                            displayThumbnailImage(currentImage);
+                            hideLoading();
+                            showSuccess(`缩略图生成成功！\n原始大小: ${formatFileSize(blob.size)}\n缩略图大小: ${formatFileSize(thumbnailBlob.size)}`);
+                            enableControls();
+                        } else {
+                            hideLoading();
+                            showError('缩略图生成失败');
+                        }
+                    }, 'image/jpeg', 0.8); // 80%质量的JPEG
+                };
+
+                img.onerror = function() {
+                    URL.revokeObjectURL(url);
+                    hideLoading();
+                    showError('无法加载图片进行缩略图生成\n\n可能原因:\n1. 文件格式不支持\n2. 文件已损坏\n3. 浏览器内存不足');
+                };
+
+                img.src = url;
+
+            } catch (error) {
+                hideLoading();
+                showError('缩略图生成失败: ' + error.message);
+            }
+        }
+
+        // 显示缩略图
+        function displayThumbnailImage(imageInfo) {
+            const previewContent = document.getElementById('previewContent');
+            const previewTitle = document.getElementById('previewTitle');
+
+            previewContent.innerHTML = `
+                <div class="image-container">
+                    <img src="${imageInfo.url}" alt="缩略图预览" class="preview-image" id="previewImg" data-original="${imageInfo.url}">
+                </div>
+            `;
+
+
+
+            // 初始化Viewer.js
+            initViewer();
+        }
+
+        // 强制预览大文件（警告用户可能卡死）
+        function tryForcePreview(filename) {
+            const blob = window.currentLargeFileBlob;
+            if (!blob) {
+                showError('文件数据不可用，请重新加载');
+                return;
+            }
+            if (!confirm('警告：强制预览大文件可能导致浏览器卡死或崩溃！\n\n确定要继续吗？')) {
+                return;
+            }
+
+            showLoading();
+
+            // 延迟执行，让用户看到警告
+            setTimeout(() => {
+                try {
+                    const correctedBlob = new Blob([blob], { type: 'image/jpeg' });
+                    const imageUrl = URL.createObjectURL(correctedBlob);
+
+                    if (!imageUrl || imageUrl.includes('blob:null')) {
+                        throw new Error('无法创建blob URL');
+                    }
+
+                    const img = new Image();
+                    const loadTimeout = setTimeout(() => {
+                        URL.revokeObjectURL(imageUrl);
+                        showError('预览超时，文件过大无法处理');
+                    }, 60000); // 60秒超时
+
+                    img.onload = function() {
+                        clearTimeout(loadTimeout);
+                        currentImage = {
+                            url: imageUrl,
+                            filename: filename,
+                            width: this.naturalWidth,
+                            height: this.naturalHeight,
+                            size: formatFileSize(blob.size),
+                            blobUrl: imageUrl
+                        };
+
+                        displayImage(this);
+                        hideLoading();
+                        showSuccess('大文件预览成功！');
+                        enableControls();
+                    };
+
+                    img.onerror = function() {
+                        clearTimeout(loadTimeout);
+                        URL.revokeObjectURL(imageUrl);
+                        showError('强制预览失败，文件无法作为图片显示');
+                    };
+
+                    img.src = imageUrl;
+                } catch (error) {
+                    showError('强制预览失败: ' + error.message);
+                }
+            }, 1000);
+        }
+
+        // 使用Data URL作为blob URL的回退方案
+        function createDataURL(blob, asset) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+
+                reader.onload = function(event) {
+                    const dataUrl = event.target.result;
+                    console.log('Created Data URL, length:', dataUrl.length);
+
+                    const img = new Image();
+                    img.onload = function() {
+                        console.log('Image loaded via Data URL:', {
+                            width: this.naturalWidth,
+                            height: this.naturalHeight
+                        });
+
+                        currentImage = {
+                            url: dataUrl,
+                            filename: asset.name,
+                            width: this.naturalWidth,
+                            height: this.naturalHeight,
+                            size: formatFileSize(blob.size),
+                            isDataUrl: true
+                        };
+
+                        displayImage(this);
+                        hideLoading();
+                        showSuccess('私有仓库资源加载成功！(使用Data URL)');
+                        enableControls();
+                        resolve();
+                    };
+
+                    img.onerror = function(event) {
+                        console.error('Data URL image load error:', event);
+                        reject(new Error(`图片加载失败: ${asset.name}\n\n即使使用Data URL也无法加载，文件可能已损坏或不是有效的图片格式`));
+                    };
+
+                    img.src = dataUrl;
+                };
+
+                reader.onerror = function(event) {
+                    console.error('FileReader error:', event);
+                    reject(new Error('无法读取blob数据'));
+                };
+
+                // 读取为Data URL
+                reader.readAsDataURL(blob);
+            });
+        }
+
+        // 带回退机制的图片加载
+        function loadImageWithFallback(url, filename, useToken = false) {
+            showLoading();
+
+            if (useToken) {
+                // 对于私有仓库，使用fetch + token的方式
+                loadPrivateImage(url, filename);
+            } else {
+                // 公开仓库的直接加载方式
+                loadPublicImage(url, filename);
+            }
+        }
+
+        // 加载公开图片
+        function loadPublicImage(url, filename) {
+            // 首先尝试直接加载
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+
+            img.onload = function() {
+                currentImage = {
+                    url: url,
+                    filename: filename,
+                    width: this.naturalWidth,
+                    height: this.naturalHeight,
+                    size: 'Unknown'
+                };
+
+                displayImage(this);
+                hideLoading();
+                showSuccess('图片加载成功！');
+                enableControls();
+            };
+
+            img.onerror = function() {
+                console.log('CORS load failed, trying without CORS...');
+
+                const img2 = new Image();
+                img2.onload = function() {
+                    currentImage = {
+                        url: url,
+                        filename: filename,
+                        width: this.naturalWidth,
+                        height: this.naturalHeight,
+                        size: 'Unknown'
+                    };
+
+                    displayImage(this);
+                    hideLoading();
+                    showSuccess('图片加载成功！');
+                    enableControls();
+                };
+
+                img2.onerror = function() {
+                    console.log('Direct load also failed, checking if token is available...');
+
+                    // 如果直接加载失败，检查是否有token可用
+                    const token = document.getElementById('githubToken').value.trim();
+                    if (token && url.includes('github.com')) {
+                        console.log('Token available, trying authenticated load...');
+                        loadPrivateImage(url, filename);
+                    } else {
+                        console.error('All loading attempts failed for:', url);
+                        showError(`图片加载失败: ${filename}\n\n可能原因:\n1. 这是私有仓库，需要GitHub Token\n2. 网络连接问题\n3. 文件不存在或已删除\n\n建议:\n1. 如果是私有仓库，请提供GitHub Token\n2. 检查文件URL是否正确\n3. 尝试在浏览器中直接访问URL`);
+                    }
+                };
+
+                img2.src = url;
+            };
+
+            img.src = url;
+        }
+
+        // 加载私有仓库图片
+        function loadPrivateImage(url, filename) {
+            const token = document.getElementById('githubToken').value.trim();
+
+            if (!token) {
+                showError('私有仓库需要GitHub Token才能访问图片资源');
+                return;
+            }
+
+            console.log('Loading private image with token:', url);
+
+            // 使用fetch获取图片数据，包含认证信息
+            fetch(url, {
+                method: 'GET',
+                headers: {
+                    'Authorization': `bearer ${token}`,
+                    'Accept': 'application/octet-stream',
+                    'User-Agent': 'Shot-Stitch-Preview/1.0'
+                },
+                mode: 'cors',
+                credentials: 'omit'
+            })
+            .then(response => {
+                console.log('Fetch response:', response);
+                if (!response.ok) {
+                    if (response.status === 401) {
+                        throw new Error('GitHub Token无效或已过期');
+                    } else if (response.status === 403) {
+                        throw new Error('Token权限不足，需要repo权限');
+                    } else if (response.status === 404) {
+                        throw new Error('文件不存在或无访问权限');
+                    }
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                return response.blob();
+            })
+            .then(blob => {
+                console.log('Image blob received:', blob);
+
+                // 检查blob类型
+                if (!blob.type.startsWith('image/')) {
+                    console.warn('Blob type is not image:', blob.type);
+                }
+
+                // 创建本地URL
+                const imageUrl = URL.createObjectURL(blob);
+
+                const img = new Image();
+                img.onload = function() {
+                    currentImage = {
+                        url: imageUrl,
+                        filename: filename,
+                        width: this.naturalWidth,
+                        height: this.naturalHeight,
+                        size: formatFileSize(blob.size),
+                        blobUrl: imageUrl // 保存blob URL用于清理
+                    };
+
+                    displayImage(this);
+                    hideLoading();
+                    showSuccess('私有仓库图片加载成功！');
+                    enableControls();
+                };
+
+                img.onerror = function() {
+                    console.error('Image load error after blob creation');
+                    URL.revokeObjectURL(imageUrl);
+                    showError(`图片加载失败: ${filename}\n\n可能原因:\n1. 文件不是有效的图片格式\n2. 文件已损坏\n3. 浏览器不支持该图片格式`);
+                };
+
+                img.src = imageUrl;
+            })
+            .catch(error => {
+                console.error('Private image load failed:', error);
+                showError(`私有仓库图片加载失败: ${error.message}\n\n请检查:\n1. GitHub Token是否有效且未过期\n2. Token是否有repo权限\n3. 文件是否存在于该发布版本中\n4. 网络连接是否正常`);
+            });
+        }
+
+        function hideAssetSelect() {
+            const assetSelectGroup = document.getElementById('assetSelectGroup');
+            const defaultHeader = document.getElementById('defaultHeader');
+            const previewContent = document.getElementById('previewContent');
+
+            // 隐藏选择器，显示默认标题
+            assetSelectGroup.style.display = 'none';
+            defaultHeader.style.display = 'block';
+
+            // 清空预览区域
+            previewContent.innerHTML = `
+                <div class="preview-placeholder">
+                    <div class="icon">🖼️</div>
+                    <div>选择图片URL或GitHub仓库开始预览</div>
+                    <div style="font-size: 0.9em; opacity: 0.7;">支持 JPG, PNG, WebP, GIF 等格式</div>
+                </div>
+            `;
+        }
+
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+        }
+
+        // 页面加载时检查URL参数和环境支持
+        window.addEventListener('load', function() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const imageUrl = urlParams.get('url');
+
+            if (imageUrl) {
+                document.getElementById('imageUrl').value = imageUrl;
+                loadImageFromUrl();
+            }
+
+
+        });
+
+
+    </script>
+</body>
+</html>

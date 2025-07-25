@@ -217,6 +217,7 @@ load_config() {
                 DEFAULT_PARALLEL_JOBS) DEFAULT_PARALLEL_JOBS="$value" ;;
                 ENABLE_KEYFRAME_DETECTION) ENABLE_KEYFRAME_DETECTION="$value" ;;
                 DEFAULT_KEYFRAME_MIN_INTERVAL) DEFAULT_KEYFRAME_MIN_INTERVAL="$value" ;;
+                DEFAULT_MAX_FRAMES_PER_PART) DEFAULT_MAX_FRAMES_PER_PART="$value" ;;
             esac
         done < "$config_file"
 
@@ -568,6 +569,9 @@ validate_config_param_value() {
         "FORMAT")
             [[ "$param_value" =~ ^(webp|jpg|jpeg|png)$ ]] || return 1
             ;;
+        "MAX_FRAMES_PER_PART")
+            [[ "$param_value" =~ ^[0-9]+$ ]] || return 1
+            ;;
         *)
             return 0  # 未知参数不验证
             ;;
@@ -734,6 +738,8 @@ load_and_validate_config() {
                 if [ -z "$PARALLEL_JOBS" ]; then PARALLEL_JOBS="$value"; fi ;;
             ENABLE_KEYFRAME_DETECTION) ENABLE_KEYFRAME_DETECTION="$value" ;;
             DEFAULT_FONT_FILE) DEFAULT_FONT_FILE="$value" ;;
+            DEFAULT_MAX_FRAMES_PER_PART)
+                if [ -z "$MAX_FRAMES_PER_PART" ]; then MAX_FRAMES_PER_PART="$value"; fi ;;
             SUPPORTED_VIDEO_FORMATS) SUPPORTED_VIDEO_FORMATS="$value" ;;
             HEADER_SPACING) HEADER_SPACING="$value" ;;
             THEME_PRIMARY) THEME_PRIMARY="$value" ;;

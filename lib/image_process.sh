@@ -314,6 +314,26 @@ generate_preview_grid() {
             return 2  # 返回特殊代码表示需要分割
         fi
     fi
+
+    # 检查是否需要分批生成
+    local should_split=false
+    local split_reason=""
+
+    # 1. 用户强制分批（命令行参数）
+    if [ "$FORCE_SPLIT" = true ]; then
+        should_split=true
+        split_reason="用户强制启用分批模式"
+    # 2. 用户设置了每部分最大帧数且超出限制
+    elif [ "$MAX_FRAMES_PER_PART" -gt 0 ] && [ "$total_frames" -gt "$MAX_FRAMES_PER_PART" ]; then
+        should_split=true
+        split_reason="帧数超出设置限制($total_frames > $MAX_FRAMES_PER_PART)"
+    fi
+
+    # 如果需要分批，调用分批生成函数
+    if [ "$should_split" = true ]; then
+        echo -e "${YELLOW}启用分批生成模式: $split_reason${NC}"
+        return 2  # 返回特殊代码表示需要分批
+    fi
     
     # 创建临时文件（使用当前格式的扩展名）
     local row_files=()
@@ -539,30 +559,44 @@ generate_split_preview() {
         *) max_dimension=65535 ;;
     esac
 
-    # 计算每个分割图的最大行数（考虑头部高度）
-    local header_height=310  # 预留头部空间
-    local available_height=$((max_dimension - header_height))
-    local max_rows_per_image=$((available_height / (FRAME_HEIGHT + GAP)))
+    # 计算分割策略
+    local max_frames_per_split
+    local max_rows_per_split
 
-    # 确保每个分割图至少有一行
-    if [ "$max_rows_per_image" -lt 1 ]; then
-        max_rows_per_image=1
+    # 如果用户设置了每部分最大帧数，优先使用用户设置
+    if [ "$MAX_FRAMES_PER_PART" -gt 0 ]; then
+        max_frames_per_split="$MAX_FRAMES_PER_PART"
+        max_rows_per_split=$(((max_frames_per_split + COLUMN - 1) / COLUMN))
+        echo "使用用户设置: 每部分最多 $max_frames_per_split 帧 ($max_rows_per_split 行)"
+    else
+        # 使用原有的尺寸限制逻辑
+        local header_height=310  # 预留头部空间
+        local available_height=$((max_dimension - header_height))
+        max_rows_per_split=$((available_height / (FRAME_HEIGHT + GAP)))
+
+        # 确保每个分割图至少有一行
+        if [ "$max_rows_per_split" -lt 1 ]; then
+            max_rows_per_split=1
+        fi
+
+        max_frames_per_split=$((max_rows_per_split * COLUMN))
+        echo "使用尺寸限制: 每部分最多 $max_frames_per_split 帧 ($max_rows_per_split 行)"
     fi
 
     # 计算总行数
     local total_rows=$(((total_frames + COLUMN - 1) / COLUMN))
 
     # 计算需要的分割图数量
-    local total_splits=$(((total_rows + max_rows_per_image - 1) / max_rows_per_image))
+    local total_splits=$(((total_frames + max_frames_per_split - 1) / max_frames_per_split))
 
-    # 均衡分配行数：尽量让每个分割图的行数相近
-    local base_rows_per_split=$((total_rows / total_splits))
-    local extra_rows=$((total_rows % total_splits))
+    # 均衡分配帧数：尽量让每个分割图的帧数相近
+    local base_frames_per_split=$((total_frames / total_splits))
+    local extra_frames=$((total_frames % total_splits))
 
-    echo "总行数: $total_rows"
-    echo "每个分割图最大行数: $max_rows_per_image"
+    echo "总帧数: $total_frames"
+    echo "每个分割图最大帧数: $max_frames_per_split"
     echo "将生成 $total_splits 个分割图"
-    echo "基础行数: $base_rows_per_split，前 $extra_rows 个分割图额外增加1行"
+    echo "基础帧数: $base_frames_per_split，前 $extra_frames 个分割图额外增加1帧"
 
     # 生成每个分割图
     local split_files=()
@@ -573,22 +607,22 @@ generate_split_preview() {
         local split_output_file="${output_file%.*}_part${split}.${FORMAT}"
         echo -e "${CYAN}生成分割图 $split/$total_splits: $(basename "$split_output_file")${NC}"
 
-        # 计算当前分割图的行数
-        local current_rows=$base_rows_per_split
-        if [ $split -le $extra_rows ]; then
-            current_rows=$((current_rows + 1))
+        # 计算当前分割图的帧数
+        local current_frames_count=$base_frames_per_split
+        if [ $split -le $extra_frames ]; then
+            current_frames_count=$((current_frames_count + 1))
         fi
 
-        # 计算当前分割图的帧数
-        local current_frames_count=$((current_rows * COLUMN))
         local end_frame_index=$((frame_index + current_frames_count - 1))
 
         # 确保不超出总帧数
         if [ $end_frame_index -ge $total_frames ]; then
             end_frame_index=$((total_frames - 1))
             current_frames_count=$((end_frame_index - frame_index + 1))
-            current_rows=$(((current_frames_count + COLUMN - 1) / COLUMN))
         fi
+
+        # 计算当前分割图的行数
+        local current_rows=$(((current_frames_count + COLUMN - 1) / COLUMN))
 
         local current_frames=()
         for ((i=frame_index; i<=end_frame_index; i++)); do

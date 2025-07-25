@@ -19,6 +19,8 @@ ENABLE_PARALLEL_PROCESSING=true
 DEFAULT_PARALLEL_JOBS="auto"
 ENABLE_KEYFRAME_DETECTION=true
 DEFAULT_KEYFRAME_MIN_INTERVAL=5
+# 分批生成默认参数
+DEFAULT_MAX_FRAMES_PER_PART=0  # 0表示使用尺寸限制逻辑，>0表示按帧数分批
 
 # 运行时参数
 INTERVAL=""
@@ -40,6 +42,9 @@ PARALLEL_JOBS=""
 KEYFRAME_MIN_INTERVAL=""
 FORCE_OVERWRITE=false
 USE_PARAMETER_SUFFIX=false
+# 分批生成运行时参数
+MAX_FRAMES_PER_PART=""
+FORCE_SPLIT=false  # 保留用于命令行强制分批
 
 # 应用默认配置
 apply_defaults() {
@@ -75,6 +80,9 @@ apply_defaults() {
 
     # 应用关键帧检测默认值
     [ -z "$KEYFRAME_MIN_INTERVAL" ] && KEYFRAME_MIN_INTERVAL="$DEFAULT_KEYFRAME_MIN_INTERVAL"
+
+    # 应用分批生成默认值
+    [ -z "$MAX_FRAMES_PER_PART" ] && MAX_FRAMES_PER_PART="$DEFAULT_MAX_FRAMES_PER_PART"
 }
 
 # 显示帮助信息
@@ -102,7 +110,7 @@ print_help() {
     echo "  --format <webp|jpg|png> 输出格式 (默认: webp)"
     echo "  --font <path>           字体文件路径 (默认: ./font/LXGWWenKai-Medium.ttf)"
     echo "  --config <path>         指定配置文件路径"
-    echo "  --preset <name>         使用预设配置 (movie|lecture|quick|dynamic)"
+    echo "  --preset <name>         使用预设配置 (movie|lecture|quick|dynamic|batch)"
     echo "  --html                  生成HTML报告"
     echo "  --html-title <title>    HTML报告标题"
     echo "  --html-theme <theme>    HTML报告主题 (modern|classic|dark)"
@@ -114,6 +122,8 @@ print_help() {
     echo "  --wizard                交互式配置向导"
     echo "  --force                 强制覆盖已存在的文件"
     echo "  --suffix                文件名包含参数后缀"
+    echo "  --max-frames-per-part <n>  每个部分最大帧数，用于分批生成 (默认: 0，使用尺寸限制)"
+    echo "  --force-split           强制启用分批生成模式（忽略帧数限制）"
     echo "  --help                  显示帮助信息"
     echo ""
     echo "示例:"
@@ -127,6 +137,8 @@ print_help() {
     echo "  $0 ./video.mp4 --font /path/to/font.ttf --quality 95"
     echo "  $0 ./video.mp4 --preset movie    # 使用电影截图预设"
     echo "  $0 ./video.mp4 --force --suffix  # 强制覆盖并使用参数后缀命名"
+    echo "  $0 ./video.mp4 --max-frames-per-part 50  # 每个部分最多50张图"
+    echo "  $0 ./video.mp4 --force-split      # 强制分批生成多个文件"
 }
 
 # 解析命令行参数
@@ -268,6 +280,14 @@ parse_arguments() {
                 WIZARD_MODE=true
                 shift 1
                 ;;
+            --max-frames-per-part)
+                MAX_FRAMES_PER_PART="$2"
+                shift 2
+                ;;
+            --force-split)
+                FORCE_SPLIT=true
+                shift 1
+                ;;
             *)
                 echo -e "${RED}错误: 未知参数 $1${NC}"
                 print_help
@@ -284,7 +304,7 @@ parse_arguments() {
         if ! load_and_validate_config "$preset_config" "preset"; then
             echo -e "${RED}错误: 预设配置加载失败: $PRESET_NAME${NC}"
             echo -e "${YELLOW}可用预设:${NC}"
-            echo -e "${YELLOW}  movie, lecture, quick, dynamic${NC}"
+            echo -e "${YELLOW}  movie, lecture, quick, dynamic, batch${NC}"
             exit 1
         fi
     elif [ -n "$CONFIG_FILE" ]; then
@@ -393,5 +413,10 @@ validate_args() {
     # 验证关键帧最小间隔
     if ! [[ "$KEYFRAME_MIN_INTERVAL" =~ ^[0-9]+$ ]] || [ "$KEYFRAME_MIN_INTERVAL" -lt 1 ]; then
         error_exit "keyframe-min必须是正整数"
+    fi
+
+    # 验证分批生成参数
+    if ! [[ "$MAX_FRAMES_PER_PART" =~ ^[0-9]+$ ]] || [ "$MAX_FRAMES_PER_PART" -lt 0 ]; then
+        error_exit "max-frames-per-part必须是非负整数，0表示不限制"
     fi
 }

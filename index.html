@@ -369,7 +369,6 @@
                             <input type="password" id="githubToken" placeholder="ghp_xxxxxxxxxxxx">
                         </div>
 
-
                         <div class="input-group">
                             <label for="repoOwner">仓库所有者</label>
                             <input type="text" id="repoOwner" placeholder="username">
@@ -378,7 +377,11 @@
                             <label for="repoName">仓库名称</label>
                             <input type="text" id="repoName" placeholder="repository-name">
                         </div>
-                        <button class="btn" onclick="loadGitHubReleases()">获取发布列表</button>
+
+                        <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                            <button class="btn" onclick="loadGitHubReleases()" style="flex: 1;">获取发布列表</button>
+                            <button class="btn btn-secondary" onclick="clearStoredData()" style="flex: 0 0 auto; width: auto; padding: 12px 16px;" title="清除本地存储的数据">🗑️</button>
+                        </div>
 
                         <div class="input-group" id="releaseSelectGroup" style="display: none;">
                             <label for="releaseSelect">选择发布版本</label>
@@ -439,6 +442,156 @@
         let imageCache = new Map(); // 图片缓存
         let currentLoadingRequest = null; // 当前加载请求的标识
         let requestCounter = 0; // 请求计数器
+
+        // localStorage 键名常量
+        const STORAGE_KEYS = {
+            GITHUB_TOKEN: 'shot-stitch-github-token',
+            REPO_OWNER: 'shot-stitch-repo-owner',
+            REPO_NAME: 'shot-stitch-repo-name'
+        };
+
+        // 页面加载时初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            loadStoredValues();
+            setupInputListeners();
+        });
+
+        // 从 localStorage 加载存储的值
+        function loadStoredValues() {
+            const githubToken = localStorage.getItem(STORAGE_KEYS.GITHUB_TOKEN);
+            const repoOwner = localStorage.getItem(STORAGE_KEYS.REPO_OWNER);
+            const repoName = localStorage.getItem(STORAGE_KEYS.REPO_NAME);
+
+            if (githubToken) {
+                document.getElementById('githubToken').value = githubToken;
+                // 延迟显示指示器，确保DOM已完全加载
+                setTimeout(() => showStorageIndicator('githubToken', true), 100);
+            }
+            if (repoOwner) {
+                document.getElementById('repoOwner').value = repoOwner;
+                setTimeout(() => showStorageIndicator('repoOwner', true), 100);
+            }
+            if (repoName) {
+                document.getElementById('repoName').value = repoName;
+                setTimeout(() => showStorageIndicator('repoName', true), 100);
+            }
+        }
+
+        // 设置输入框监听器
+        function setupInputListeners() {
+            // GitHub Token 输入框
+            document.getElementById('githubToken').addEventListener('input', function(e) {
+                const value = e.target.value.trim();
+                if (value) {
+                    localStorage.setItem(STORAGE_KEYS.GITHUB_TOKEN, value);
+                    showStorageIndicator('githubToken', true);
+                } else {
+                    localStorage.removeItem(STORAGE_KEYS.GITHUB_TOKEN);
+                    showStorageIndicator('githubToken', false);
+                }
+            });
+
+            // 仓库所有者输入框
+            document.getElementById('repoOwner').addEventListener('input', function(e) {
+                const value = e.target.value.trim();
+                if (value) {
+                    localStorage.setItem(STORAGE_KEYS.REPO_OWNER, value);
+                    showStorageIndicator('repoOwner', true);
+                } else {
+                    localStorage.removeItem(STORAGE_KEYS.REPO_OWNER);
+                    showStorageIndicator('repoOwner', false);
+                }
+            });
+
+            // 仓库名称输入框
+            document.getElementById('repoName').addEventListener('input', function(e) {
+                const value = e.target.value.trim();
+                if (value) {
+                    localStorage.setItem(STORAGE_KEYS.REPO_NAME, value);
+                    showStorageIndicator('repoName', true);
+                } else {
+                    localStorage.removeItem(STORAGE_KEYS.REPO_NAME);
+                    showStorageIndicator('repoName', false);
+                }
+            });
+        }
+
+        // 显示存储状态指示器
+        function showStorageIndicator(inputId, isStored) {
+            const input = document.getElementById(inputId);
+            const existingIndicator = input.parentNode.querySelector('.storage-indicator');
+
+            if (existingIndicator) {
+                existingIndicator.remove();
+            }
+
+            if (isStored) {
+                const indicator = document.createElement('span');
+                indicator.className = 'storage-indicator';
+                indicator.innerHTML = '💾';
+                indicator.style.cssText = `
+                    position: absolute;
+                    right: 10px;
+                    top: 50%;
+                    transform: translateY(-50%);
+                    font-size: 14px;
+                    opacity: 0.7;
+                    pointer-events: none;
+                `;
+                indicator.title = '已保存到本地存储';
+
+                // 设置父容器为相对定位
+                input.parentNode.style.position = 'relative';
+                input.parentNode.appendChild(indicator);
+
+                // 2秒后淡出
+                setTimeout(() => {
+                    if (indicator.parentNode) {
+                        indicator.style.transition = 'opacity 0.5s';
+                        indicator.style.opacity = '0';
+                        setTimeout(() => {
+                            if (indicator.parentNode) {
+                                indicator.remove();
+                            }
+                        }, 500);
+                    }
+                }, 2000);
+            }
+        }
+
+        // 清除存储的数据
+        function clearStoredData() {
+            localStorage.removeItem(STORAGE_KEYS.GITHUB_TOKEN);
+            localStorage.removeItem(STORAGE_KEYS.REPO_OWNER);
+            localStorage.removeItem(STORAGE_KEYS.REPO_NAME);
+
+            // 清空输入框
+            document.getElementById('githubToken').value = '';
+            document.getElementById('repoOwner').value = '';
+            document.getElementById('repoName').value = '';
+
+            // 清除存储指示器
+            ['githubToken', 'repoOwner', 'repoName'].forEach(inputId => {
+                const input = document.getElementById(inputId);
+                const indicator = input.parentNode.querySelector('.storage-indicator');
+                if (indicator) {
+                    indicator.remove();
+                }
+            });
+
+            showSuccess('已清除存储的数据');
+        }
+
+        // 调试函数：检查 localStorage 状态
+        function checkStorageStatus() {
+            const status = {
+                githubToken: localStorage.getItem(STORAGE_KEYS.GITHUB_TOKEN) ? '已存储' : '未存储',
+                repoOwner: localStorage.getItem(STORAGE_KEYS.REPO_OWNER) ? '已存储' : '未存储',
+                repoName: localStorage.getItem(STORAGE_KEYS.REPO_NAME) ? '已存储' : '未存储'
+            };
+            console.log('localStorage 状态:', status);
+            return status;
+        }
 
         // 标签页切换
         function switchTab(tabName) {

@@ -85,9 +85,9 @@ print_help() {
     echo "  $0 <video_file_or_directory> [选项]"
     echo ""
     echo "可选参数:"
-    echo "  --mode <time|smart|keyframe>  截图模式 (默认: time)"
+    echo "  --mode <time|scene|keyframe>  截图模式 (默认: time)"
     echo "    time                  固定时间间隔截图"
-    echo "    smart                 智能混合模式（场景检测+时间间隔）"
+    echo "    scene                 场景检测模式（基于视觉内容变化的智能截图）"
     echo "    keyframe              关键帧检测模式（基于I帧的智能截图）"
     echo "  --interval <seconds>    时间模式的截图间隔，单位秒 (默认: 10)"
     echo "  --min-interval <sec>    智能模式最小间隔，单位秒 (默认: 30)"
@@ -313,8 +313,8 @@ validate_args() {
     fi
     
     # 验证模式参数
-    if [[ "$MODE" != "time" && "$MODE" != "smart" && "$MODE" != "keyframe" ]]; then
-        error_exit "mode必须是 'time', 'smart' 或 'keyframe'"
+    if [[ "$MODE" != "time" && "$MODE" != "scene" && "$MODE" != "keyframe" ]]; then
+        error_exit "mode必须是 'time', 'scene' 或 'keyframe'"
     fi
     
     # 验证数值参数

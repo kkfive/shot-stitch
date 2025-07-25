@@ -55,8 +55,8 @@ create_info_header() {
     # 生成参数信息
     local mode_desc=""
     case "$MODE" in
-        "smart")
-            mode_desc="智能模式(${MIN_INTERVAL}-${MAX_INTERVAL}s, 敏感度${SCENE_THRESHOLD})"
+        "scene")
+            mode_desc="场景检测模式(${MIN_INTERVAL}-${MAX_INTERVAL}s, 敏感度${SCENE_THRESHOLD})"
             ;;
         "keyframe")
             mode_desc="关键帧模式(最小间隔${KEYFRAME_MIN_INTERVAL}s)"

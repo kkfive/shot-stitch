@@ -145,21 +145,21 @@ extract_frames_time_parallel() {
     rm -f "$results_file"
 }
 
-# 并行智能模式帧截取
-extract_frames_smart_parallel() {
-    echo -e "${YELLOW}开始智能并行截取视频帧...${NC}"
+# 并行场景检测模式帧截取
+extract_frames_scene_parallel() {
+    echo -e "${YELLOW}开始场景检测并行截取视频帧...${NC}"
     
-    # 执行场景检测
-    if ! detect_scene_changes "$VIDEO_FILE" "$SCENE_THRESHOLD"; then
+    # 执行自适应场景检测
+    if ! detect_scene_changes_adaptive "$VIDEO_FILE" "$SCENE_THRESHOLD"; then
         echo -e "${YELLOW}场景检测失败，回退到时间间隔模式${NC}"
         extract_frames_time_parallel
         return $?
     fi
     
-    # 计算智能时间点
-    calculate_smart_timepoints "$DURATION" "$MIN_INTERVAL" "$MAX_INTERVAL"
-    
-    local timepoints=("${SMART_TIMEPOINTS[@]}")
+    # 计算场景检测时间点
+    calculate_scene_timepoints "$DURATION" "$MIN_INTERVAL" "$MAX_INTERVAL"
+
+    local timepoints=("${SCENE_TIMEPOINTS[@]}")
     echo "预计截取 ${#timepoints[@]} 帧"
     echo -e "${CYAN}使用 $PARALLEL_JOBS 个并行进程${NC}"
     

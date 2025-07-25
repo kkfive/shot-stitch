@@ -548,7 +548,7 @@ validate_config_param_value() {
 
     case "$param_name" in
         "MODE")
-            [[ "$param_value" =~ ^(time|smart|keyframe)$ ]] || return 1
+            [[ "$param_value" =~ ^(time|scene|keyframe)$ ]] || return 1
             ;;
         "INTERVAL"|"MIN_INTERVAL"|"MAX_INTERVAL"|"KEYFRAME_MIN_INTERVAL"|"COLUMN")
             [[ "$param_value" =~ ^[1-9][0-9]*$ ]] || return 1
@@ -776,9 +776,9 @@ generate_output_filename() {
         local suffix=""
 
         case "$MODE" in
-            "smart")
-                # 智能模式：video_smart_c5_min30_max300_t03_g5_q100.webp
-                suffix="smart_c${COLUMN}_min${MIN_INTERVAL}_max${MAX_INTERVAL}_t$(echo "$SCENE_THRESHOLD" | sed 's/0\.//')_g${GAP}_q${QUALITY}"
+            "scene")
+                # 场景检测模式：video_scene_c5_min30_max300_t03_g5_q100.webp
+                suffix="scene_c${COLUMN}_min${MIN_INTERVAL}_max${MAX_INTERVAL}_t$(echo "$SCENE_THRESHOLD" | sed 's/0\.//')_g${GAP}_q${QUALITY}"
                 ;;
             "keyframe")
                 # 关键帧模式：video_keyframe_c5_min5_g5_q100.webp

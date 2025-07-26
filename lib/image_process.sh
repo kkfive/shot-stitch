@@ -37,11 +37,16 @@ create_info_header() {
     fi
 
     # 第一行：标题、文件名和分割信息
+    # 使用解码后的文件名用于显示
+    local display_filename="${VIDEO_FULL_FILENAME_DISPLAY:-$VIDEO_FULL_FILENAME}"
+    # 转义文件名中的特殊字符，防止ImageMagick误解为属性
+    display_filename=$(echo "$display_filename" | sed 's/%/%%/g')
+
     local title_line=""
     if [ -n "$VIDEO_TITLE" ] && [ "$VIDEO_TITLE" != "N/A" ]; then
-        title_line="标题：$VIDEO_TITLE    文件名：$VIDEO_FULL_FILENAME"
+        title_line="标题：$VIDEO_TITLE    文件名：$display_filename"
     else
-        title_line="文件名：$VIDEO_FULL_FILENAME"
+        title_line="文件名：$display_filename"
     fi
 
     # 如果有分割信息，添加到标题行
@@ -81,8 +86,9 @@ create_info_header() {
     if [ -n "$ORIGINAL_ARGS" ]; then
         full_command="$full_command $ORIGINAL_ARGS"
     else
-        # 重构基本命令
-        full_command="$full_command \"$VIDEO_FILE\""
+        # 重构基本命令，使用解码后的文件名用于显示
+        local display_video_file="${VIDEO_FULL_FILENAME_DISPLAY:-$(basename "$VIDEO_FILE")}"
+        full_command="$full_command \"$display_video_file\""
         if [ "$MODE" != "time" ]; then
             full_command="$full_command --mode $MODE"
         fi
@@ -103,6 +109,8 @@ create_info_header() {
     # 智能处理命令行长度
     local max_chars_per_line=$((grid_width / 12))  # 估算每行最大字符数
     local command_line1="执行命令：$full_command"
+    # 转义命令行中的特殊字符，防止ImageMagick误解为属性
+    command_line1=$(echo "$command_line1" | sed 's/%/%%/g')
     local command_line2=""
 
     # 如果命令太长，进行智能分割
@@ -125,8 +133,11 @@ create_info_header() {
 
         # 如果找到合适的分割点
         if [ $split_pos -gt $((max_chars_per_line / 2)) ]; then
-            command_line1="${command_line1:0:$split_pos}"
-            command_line2="    ${command_line1:$split_pos}"  # 第二行缩进
+            local original_command="$command_line1"
+            command_line1="${original_command:0:$split_pos}"
+            command_line2="    ${original_command:$split_pos}"  # 第二行缩进
+            # 转义第二行中的特殊字符
+            command_line2=$(echo "$command_line2" | sed 's/%/%%/g')
         else
             # 如果找不到合适分割点，使用省略号
             command_line1="${command_line1:0:$((max_chars_per_line-3))}..."

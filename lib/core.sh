@@ -147,6 +147,13 @@ USE_PARAMETER_SUFFIX=false
 # 支持的视频格式
 VIDEO_EXTENSIONS=("mp4" "avi" "mkv" "mov" "wmv" "flv" "webm" "m4v" "3gp" "ogv" "ts" "mts")
 
+# URL解码函数
+url_decode() {
+    local encoded="$1"
+    # 使用printf进行URL解码
+    printf '%b' "${encoded//%/\\x}"
+}
+
 # 加载配置文件
 load_config() {
     local config_file="$1"

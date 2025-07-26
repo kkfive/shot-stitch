@@ -589,14 +589,10 @@ generate_split_preview() {
     # 计算需要的分割图数量
     local total_splits=$(((total_frames + max_frames_per_split - 1) / max_frames_per_split))
 
-    # 均衡分配帧数：尽量让每个分割图的帧数相近
-    local base_frames_per_split=$((total_frames / total_splits))
-    local extra_frames=$((total_frames % total_splits))
-
     echo "总帧数: $total_frames"
     echo "每个分割图最大帧数: $max_frames_per_split"
     echo "将生成 $total_splits 个分割图"
-    echo "基础帧数: $base_frames_per_split，前 $extra_frames 个分割图额外增加1帧"
+    echo "分割策略: 前 $((total_splits - 1)) 个分割图各包含 $max_frames_per_split 帧，最后一个分割图包含剩余帧"
 
     # 生成每个分割图
     local split_files=()
@@ -608,9 +604,13 @@ generate_split_preview() {
         echo -e "${CYAN}生成分割图 $split/$total_splits: $(basename "$split_output_file")${NC}"
 
         # 计算当前分割图的帧数
-        local current_frames_count=$base_frames_per_split
-        if [ $split -le $extra_frames ]; then
-            current_frames_count=$((current_frames_count + 1))
+        local current_frames_count
+        if [ $split -lt $total_splits ]; then
+            # 前面的分割图都使用最大帧数
+            current_frames_count=$max_frames_per_split
+        else
+            # 最后一个分割图包含剩余的所有帧
+            current_frames_count=$((total_frames - frame_index))
         fi
 
         local end_frame_index=$((frame_index + current_frames_count - 1))

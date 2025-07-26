@@ -194,7 +194,7 @@ generate_info_content() {
         "video_info")
             if [ "$theme" = "modern" ]; then
                 cat << EOF
-                <div class="info-item"><span class="info-label">文件名:</span><span class="info-value">$VIDEO_FILENAME</span></div>
+                <div class="info-item"><span class="info-label">文件名:</span><span class="info-value">${VIDEO_FILENAME_DISPLAY:-$VIDEO_FILENAME}</span></div>
                 <div class="info-item"><span class="info-label">时长:</span><span class="info-value">$DURATION_FORMATTED</span></div>
                 <div class="info-item"><span class="info-label">分辨率:</span><span class="info-value">${VIDEO_WIDTH}x${VIDEO_HEIGHT}</span></div>
                 <div class="info-item"><span class="info-label">文件大小:</span><span class="info-value">$FILE_SIZE_FORMATTED</span></div>
@@ -202,7 +202,7 @@ generate_info_content() {
 EOF
             else
                 cat << EOF
-                <tr><td>文件名</td><td>$VIDEO_FILENAME</td></tr>
+                <tr><td>文件名</td><td>${VIDEO_FILENAME_DISPLAY:-$VIDEO_FILENAME}</td></tr>
                 <tr><td>时长</td><td>$DURATION_FORMATTED</td></tr>
                 <tr><td>分辨率</td><td>${VIDEO_WIDTH}x${VIDEO_HEIGHT}</td></tr>
                 <tr><td>文件大小</td><td>$FILE_SIZE_FORMATTED</td></tr>

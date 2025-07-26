@@ -26,6 +26,21 @@ get_video_info() {
     # 获取文件名（不含扩展名和含扩展名）
     VIDEO_FULL_FILENAME=$(basename "$video_file")
     VIDEO_FILENAME="${VIDEO_FULL_FILENAME%.*}"
+
+    # 检查文件名是否包含URL编码，如果是则解码
+    if [[ "$VIDEO_FULL_FILENAME" =~ %[0-9A-Fa-f]{2} ]]; then
+        VIDEO_FULL_FILENAME_DECODED=$(url_decode "$VIDEO_FULL_FILENAME")
+        VIDEO_FILENAME_DECODED="${VIDEO_FULL_FILENAME_DECODED%.*}"
+        echo -e "${YELLOW}检测到URL编码的文件名，已解码:${NC}"
+        echo "  原始: $VIDEO_FULL_FILENAME"
+        echo "  解码: $VIDEO_FULL_FILENAME_DECODED"
+        # 使用解码后的文件名用于显示
+        VIDEO_FULL_FILENAME_DISPLAY="$VIDEO_FULL_FILENAME_DECODED"
+        VIDEO_FILENAME_DISPLAY="$VIDEO_FILENAME_DECODED"
+    else
+        VIDEO_FULL_FILENAME_DISPLAY="$VIDEO_FULL_FILENAME"
+        VIDEO_FILENAME_DISPLAY="$VIDEO_FILENAME"
+    fi
     
     # 生成时间
     GENERATION_TIME=$(date "+%Y-%m-%d %H:%M:%S")
@@ -66,7 +81,7 @@ get_video_info() {
     DURATION_FORMATTED=$(printf "%02d:%02d:%02d" $hours $minutes $seconds)
     
     echo -e "${GREEN}视频信息:${NC}"
-    echo "  文件名: $VIDEO_FILENAME"
+    echo "  文件名: $VIDEO_FILENAME_DISPLAY"
     echo "  时长: $DURATION_FORMATTED (${DURATION}秒)"
     echo "  分辨率: ${VIDEO_WIDTH}x${VIDEO_HEIGHT}"
     echo "  文件大小: $FILE_SIZE_FORMATTED"

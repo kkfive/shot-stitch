@@ -1,12 +1,12 @@
 # 视频预览生成器
 
-[![Version](https://img.shields.io/badge/version-0.4.0-blue.svg)](https://github.com/kkfive/shot-stitch)
+[![Version](https://img.shields.io/badge/version-0.4.1-blue.svg)](https://github.com/kkfive/shot-stitch)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Docker](https://img.shields.io/badge/docker-supported-blue.svg)](Dockerfile)
 
 一个功能强大的本地视频预览图像生成器，具备智能场景检测、批量处理和 Docker 支持。零配置生成高质量视频缩略图。
 
-> **🚀 最新版本**: 版本 0.4.0 - 并行场景检测，性能提升3-5倍，实时进度监控
+> **🚀 最新版本**: 版本 0.4.1 - 中文文件名支持，URL解码，ImageMagick兼容性修复
 
 ## ✨ 核心特性
 
@@ -35,6 +35,12 @@
 - **智能分批**: 自动按帧数或尺寸限制分割大型预览图
 - **灵活控制**: 支持用户自定义每部分最大帧数
 - **强制分批**: 可强制启用分批模式，适合特殊需求
+
+### 🌐 国际化支持 (v0.4.1 新增)
+- **中文文件名支持**: 自动检测并解码URL编码的中文文件名
+- **多语言兼容**: 支持中文、日文等多种语言文件名
+- **智能显示**: 预览图显示可读的中文名称，而非URL编码
+- **ImageMagick兼容**: 修复特殊字符导致的警告和错误
 
 ### 📊 性能表现 (v0.4.0)
 | 视频规模 | v0.3.0 | v0.4.0 | 提升幅度 |
@@ -168,6 +174,10 @@ sudo dnf install ffmpeg ImageMagick bc
 
 # 强制分批生成
 ./preview.sh video.mp4 --force-split --max-frames-per-part 25
+
+# 中文文件名支持 (v0.4.1)
+./preview.sh "n1815%20%E6%9D%B1%E7%86%B1%E6%BF%80%E6%83%85.mp4" --mode scene
+# 自动解码为: n1815 東熱激情.mp4
 ```
 
 ## 📖 API 参考

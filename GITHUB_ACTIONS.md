@@ -19,12 +19,29 @@ Shot Stitch 项目提供了一个 GitHub Actions 工作流，允许您通过 Web
 | `video_url` | 视频文件的 URL | ✅ | - | string |
 | `preset` | 预设模式 | ❌ | dynamic | choice |
 | `target_repo` | 发布到的仓库 | ❌ | kkfive-action/private-screenshots | string |
+| `custom_filename` | 自定义文件名（不含扩展名） | ❌ | - | string |
 
 #### 预设模式选项
 - **movie**: 电影模式，适合长片内容
 - **lecture**: 讲座模式，适合教育内容
 - **quick**: 快速模式，适合快速预览
 - **dynamic**: 动态模式，适合变化频繁的内容
+
+#### 自定义文件名说明
+`custom_filename` 参数用于重命名下载的视频文件：
+
+- **用途**: 将下载的视频文件重命名为指定名称
+- **格式**: 不含扩展名，例如 `我的视频` 会保存为 `我的视频.mp4`
+- **扩展名**: 自动从原始URL中提取扩展名
+- **何时使用**:
+  - URL中的文件名包含复杂字符或编码
+  - 希望使用更简洁的文件名
+  - 需要统一的命名规范
+
+**示例**:
+- URL: `http://example.com/n1815%20%E6%9D%B1%E7%86%B1.mp4`
+- 自定义文件名: `东热激情`
+- 实际保存: `东热激情.mp4`
 
 ## 使用步骤
 
@@ -42,6 +59,10 @@ Shot Stitch 项目提供了一个 GitHub Actions 工作流，允许您通过 Web
 - **发布到的仓库**: 指定存储截图的目标仓库
   - 格式: `owner/repo-name`
   - 需要有相应的访问权限
+- **自定义文件名** (可选): 重命名下载的视频文件
+  - 不含扩展名，例如：`我的视频`
+  - 留空则使用URL中的原始文件名
+  - 推荐在URL文件名复杂时使用
 
 ### 3. 监控执行
 工作流包含以下主要步骤：
@@ -135,6 +156,15 @@ Personal Access Token 需要以下权限：
 预设模式: lecture
 发布到的仓库: myorg/lecture-materials
 ```
+
+### 使用自定义文件名
+```
+视频 URL: https://example.com/n1815%20%E6%9D%B1%E7%86%B1%E6%BF%80%E6%83%85.mp4
+预设模式: movie
+发布到的仓库: myorg/screenshots
+自定义文件名: 东热激情_part1
+```
+*说明: 视频将保存为 `东热激情_part1.mp4`，生成的截图文件名也会基于此名称*
 
 ---
 

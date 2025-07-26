@@ -16,48 +16,7 @@ else
     SUPPORTS_ASSOCIATIVE_ARRAYS=false
 fi
 
-# 内存管理功能
-get_memory_usage() {
-    # 获取当前进程内存使用（KB）
-    ps -o rss= -p $$ 2>/dev/null | tr -d ' ' || echo 0
-}
-
-get_available_memory() {
-    # 获取系统可用内存（MB）
-    if command -v free >/dev/null 2>&1; then
-        free -m | awk 'NR==2{print $7}' 2>/dev/null || echo 1024
-    elif [ -f /proc/meminfo ]; then
-        awk '/MemAvailable/{print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 1024
-    else
-        # macOS 使用 vm_stat
-        local page_size=$(vm_stat | grep "page size" | awk '{print $8}' 2>/dev/null || echo 4096)
-        local free_pages=$(vm_stat | grep "Pages free" | awk '{print $3}' | tr -d '.' 2>/dev/null || echo 262144)
-        echo $((free_pages * page_size / 1024 / 1024))
-    fi
-}
-
-memory_garbage_collection() {
-    # 简单的内存清理
-    local current_memory=$(get_memory_usage)
-    local available_memory=$(get_available_memory)
-
-    # 如果内存使用超过阈值，进行清理
-    if [ "$current_memory" -gt 512000 ] || [ "$available_memory" -lt 100 ]; then
-        echo "执行内存清理..."
-
-        # 清理临时文件
-        find "$TEMP_DIR" -name "*.txt" -mmin +5 -delete 2>/dev/null || true
-
-        # 强制垃圾回收（如果支持）
-        if command -v sync >/dev/null 2>&1; then
-            sync
-        fi
-
-        return 0
-    fi
-
-    return 1
-}
+# 注意：内存管理功能已移除，因为在当前实现中未被使用
 
 # 检测视频中的关键帧
 detect_keyframes() {

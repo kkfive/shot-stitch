@@ -135,12 +135,10 @@ FILE_SIZE_FORMATTED=""
 BITRATE_FORMATTED=""
 DURATION_FORMATTED=""
 
-# 场景检测变量
-SCENE_TIMES=()
-SMART_TIMEPOINTS=()
-
-# 关键帧检测变量
-KEYFRAME_TIMES=()
+# 注意：场景检测和关键帧检测的全局变量在各自模块中定义
+# SCENE_TIMES=() 在 lib/scene_detect.sh 中定义
+# KEYFRAME_TIMES=() 在 lib/keyframe.sh 中定义
+# SCENE_TIMEPOINTS=() 在 lib/scene_detect.sh 中定义
 
 # 文件命名和覆盖选项
 FORCE_OVERWRITE=false
@@ -751,10 +749,6 @@ load_and_validate_config() {
             # 场景检测优化配置
             SCENE_DETECTION_MAX_SEGMENTS) SCENE_DETECTION_MAX_SEGMENTS="$value" ;;
             SCENE_DETECTION_SEGMENT_TIMEOUT) SCENE_DETECTION_SEGMENT_TIMEOUT="$value" ;;
-            ENABLE_MEMORY_OPTIMIZATION) ENABLE_MEMORY_OPTIMIZATION="$value" ;;
-            TEMP_DIR_CLEANUP) TEMP_DIR_CLEANUP="$value" ;;
-            ENABLE_PERFORMANCE_MONITORING) ENABLE_PERFORMANCE_MONITORING="$value" ;;
-            SHOW_DETAILED_PROGRESS) SHOW_DETAILED_PROGRESS="$value" ;;
             *)
                 echo -e "${YELLOW}警告: 未知配置参数 '$key' 在 $config_file:$line_num${NC}" ;;
         esac

@@ -3,6 +3,7 @@
 
 # 全局变量
 SCENE_TIMES=()
+SCENE_TIMEPOINTS=()  # 计算出的场景检测时间点
 SCENE_STATS_processing_time=0
 SCENE_STATS_total_scenes_analyzed=0
 SCENE_STATS_scenes_found=0
@@ -463,15 +464,11 @@ detect_scene_changes_parallel() {
             local scene_threshold="$threshold"
             local timeout_setting="$timeout_per_segment"
 
-            # 调试信息（可选）
-            # echo "DEBUG: 分段 $segment_index 开始执行" >> "$segment_output_file.debug"
-
             # 确保每个分段至少有1个线程
             local segment_threads=$((cpu_cores / segment_count))
             if [ $segment_threads -lt 1 ]; then
                 segment_threads=1
             fi
-            # echo "  线程数: $segment_threads" >> "$segment_output_file.debug"
 
             # 创建进度文件
             local progress_file="$segment_output_file.progress"
@@ -480,7 +477,7 @@ detect_scene_changes_parallel() {
             # macOS兼容的超时机制，带进度监控
             if [ "$timeout_setting" -gt 0 ]; then
                 # 启动ffmpeg进程，使用progress参数
-                /opt/homebrew/bin/ffmpeg -ss "$segment_start_time" -t "$((segment_end_time - segment_start_time))" -i "$video_input_file" \
+                ffmpeg -ss "$segment_start_time" -t "$((segment_end_time - segment_start_time))" -i "$video_input_file" \
                     -vf "scale=640:-1,fps=2,select='gt(scene,$scene_threshold)',showinfo" \
                     -f null - \
                     -threads "$segment_threads" \
@@ -513,7 +510,7 @@ detect_scene_changes_parallel() {
                 echo "TIMEOUT" > "$progress_file"
             else
                 # 无超时模式，但仍然监控进度
-                /opt/homebrew/bin/ffmpeg -ss "$segment_start_time" -t "$((segment_end_time - segment_start_time))" -i "$video_input_file" \
+                ffmpeg -ss "$segment_start_time" -t "$((segment_end_time - segment_start_time))" -i "$video_input_file" \
                     -vf "scale=640:-1,fps=2,select='gt(scene,$scene_threshold)',showinfo" \
                     -f null - \
                     -threads "$segment_threads" \
@@ -531,7 +528,6 @@ detect_scene_changes_parallel() {
                     echo "100" > "$progress_file"  # 标记完成
                 fi
             fi
-            # echo "DEBUG: 分段 $segment_index 执行完成" >> "$segment_output_file.debug"
         ) &
 
         segment_pids+=($!)

@@ -209,6 +209,11 @@ jobs:
 
         # 创建包含所有文件的压缩包
         echo "📦 创建压缩包..."
+        mkdir -p temp_upload
+
+        # 复制所有截图文件到临时目录
+        find video_input/ -type f \( -name "*.webp" -o -name "*.jpg" -o -name "*.png" -o -name "*.html" \) ! -name "$ORIGINAL_FILENAME" -exec cp {} temp_upload/ \;
+
         cd temp_upload
         zip_filename="${VIDEO_FILENAME}_all_files.zip"
         zip -r "$zip_filename" .

@@ -966,7 +966,7 @@
             githubReleases.forEach((release, index) => {
                 const option = document.createElement('option');
                 option.value = index;
-                option.textContent = `${release.tag_name} - ${release.name || '未命名'} ${release.prerelease ? '(预发布)' : ''}`;
+                option.textContent = `${release.name || release.tag_name || '未命名'} ${release.prerelease ? '(预发布)' : ''}`;
                 releaseSelect.appendChild(option);
             });
 

@@ -748,6 +748,13 @@ load_and_validate_config() {
             THEME_WARNING) THEME_WARNING="$value" ;;
             THEME_ERROR) THEME_ERROR="$value" ;;
             THEME_INFO) THEME_INFO="$value" ;;
+            # 场景检测优化配置
+            SCENE_DETECTION_MAX_SEGMENTS) SCENE_DETECTION_MAX_SEGMENTS="$value" ;;
+            SCENE_DETECTION_SEGMENT_TIMEOUT) SCENE_DETECTION_SEGMENT_TIMEOUT="$value" ;;
+            ENABLE_MEMORY_OPTIMIZATION) ENABLE_MEMORY_OPTIMIZATION="$value" ;;
+            TEMP_DIR_CLEANUP) TEMP_DIR_CLEANUP="$value" ;;
+            ENABLE_PERFORMANCE_MONITORING) ENABLE_PERFORMANCE_MONITORING="$value" ;;
+            SHOW_DETAILED_PROGRESS) SHOW_DETAILED_PROGRESS="$value" ;;
             *)
                 echo -e "${YELLOW}警告: 未知配置参数 '$key' 在 $config_file:$line_num${NC}" ;;
         esac

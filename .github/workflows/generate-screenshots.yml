@@ -64,6 +64,15 @@ jobs:
         echo "⬇️ 正在获取视频资源..."
         echo "🔗 URL: $VIDEO_URL"
 
+        # 从 URL 中提取原始文件名
+        ORIGINAL_FILENAME=$(echo "$VIDEO_URL" | sed 's/.*\///' | sed 's/\?.*$//')
+        if [ -z "$ORIGINAL_FILENAME" ] || [[ ! "$ORIGINAL_FILENAME" =~ \. ]]; then
+          ORIGINAL_FILENAME="video.mp4"
+        fi
+
+        echo "📝 原始文件名: $ORIGINAL_FILENAME"
+        echo "ORIGINAL_FILENAME=$ORIGINAL_FILENAME" >> $GITHUB_ENV
+
         # 首先获取文件信息
         echo "📊 获取文件信息..."
         CONTENT_LENGTH=$(curl -sI -L "$VIDEO_URL" | grep -i content-length | tail -1 | cut -d' ' -f2 | tr -d '\r')
@@ -74,19 +83,19 @@ jobs:
           echo "⚠️ 无法获取文件大小信息"
         fi
 
-        # 使用 curl 下载，显示实时进度
+        # 使用 curl 下载，保持原始文件名
         echo "⬇️ 开始下载..."
         if curl -L --fail --progress-bar \
                --connect-timeout 30 --max-time 3600 \
                --user-agent "Mozilla/5.0 (compatible; VideoProcessor/1.0)" \
-               --output video_input/video.mp4 \
+               --output "video_input/$ORIGINAL_FILENAME" \
                --write-out "✅ 下载完成 - 实际大小: %{size_download} 字节 - 总用时: %{time_total}s - 平均速度: %{speed_download} B/s\n" \
                "$VIDEO_URL"; then
 
           # 验证文件并显示友好的大小
-          if [ -f video_input/video.mp4 ] && [ -s video_input/video.mp4 ]; then
-            FILE_SIZE=$(du -h video_input/video.mp4 | cut -f1)
-            FILE_SIZE_BYTES=$(stat -c%s video_input/video.mp4 2>/dev/null || stat -f%z video_input/video.mp4 2>/dev/null)
+          if [ -f "video_input/$ORIGINAL_FILENAME" ] && [ -s "video_input/$ORIGINAL_FILENAME" ]; then
+            FILE_SIZE=$(du -h "video_input/$ORIGINAL_FILENAME" | cut -f1)
+            FILE_SIZE_BYTES=$(stat -c%s "video_input/$ORIGINAL_FILENAME" 2>/dev/null || stat -f%z "video_input/$ORIGINAL_FILENAME" 2>/dev/null)
             echo "📊 最终文件大小: ${FILE_SIZE} (${FILE_SIZE_BYTES} 字节)"
 
             # 验证文件完整性（如果有预期大小）
@@ -111,43 +120,38 @@ jobs:
     - name: 生成截图
       run: |
         echo "🎬 开始生成截图..."
-        
-        # 从 URL 中提取文件名
-        VIDEO_FILENAME=$(echo "$VIDEO_URL" | sed 's/.*\///' | sed 's/\?.*$//' | sed 's/\.[^.]*$//')
-        if [ -z "$VIDEO_FILENAME" ]; then
-          VIDEO_FILENAME="video_$(date +%Y%m%d_%H%M%S)"
-        fi
+
+        # 从原始文件名中提取基础名称（不含扩展名）
+        VIDEO_FILENAME=$(echo "$ORIGINAL_FILENAME" | sed 's/\.[^.]*$//')
         VIDEO_FILENAME=$(echo "$VIDEO_FILENAME" | sed 's/[^a-zA-Z0-9_-]/_/g' | sed 's/__*/_/g' | sed 's/^_\|_$//g')
-        
+
         echo "📝 视频文件名: $VIDEO_FILENAME"
         echo "VIDEO_FILENAME=$VIDEO_FILENAME" >> $GITHUB_ENV
-        
-        # 运行 shot-stitch Docker 容器
+
+        # 运行 shot-stitch Docker 容器，使用原始文件名
         docker run --rm \
           -v $(pwd)/video_input:/data \
           dreamytzk/shot-stitch:latest \
-          /data/video.mp4 \
+          "/data/$ORIGINAL_FILENAME" \
           --preset ${{ inputs.preset }} \
           --html \
           --force
-        
+
         # 检查生成的文件
-        SCREENSHOT_COUNT=$(find video_input/ -type f \( -name "*.webp" -o -name "*.jpg" -o -name "*.png" -o -name "*.html" \) ! -name "video.mp4" | wc -l)
-        
+        SCREENSHOT_COUNT=$(find video_input/ -type f \( -name "*.webp" -o -name "*.jpg" -o -name "*.png" -o -name "*.html" \) ! -name "$ORIGINAL_FILENAME" | wc -l)
+
         if [ "$SCREENSHOT_COUNT" -eq 0 ]; then
           echo "❌ 没有生成任何截图文件"
           exit 1
         fi
-        
+
         echo "✅ 截图生成完成，共生成 $SCREENSHOT_COUNT 个文件"
-        
+
         # 列出生成的文件
         echo "📊 生成的文件:"
-        find video_input/ -type f \( -name "*.webp" -o -name "*.jpg" -o -name "*.png" -o -name "*.html" \) ! -name "video.mp4" | while read file; do
+        find video_input/ -type f \( -name "*.webp" -o -name "*.jpg" -o -name "*.png" -o -name "*.html" \) ! -name "$ORIGINAL_FILENAME" | while read file; do
           echo "  - $(basename "$file") ($(du -h "$file" | cut -f1))"
         done
-      env:
-        VIDEO_URL: ${{ inputs.video_url }}
     
     - name: 准备 Release 信息
       run: |
@@ -171,19 +175,7 @@ jobs:
         echo "" >> release_notes.md
         echo "## 包含文件" >> release_notes.md
         find video_input/ -type f \( -name "*.webp" -o -name "*.jpg" -o -name "*.png" -o -name "*.html" \) ! -name "video.mp4" | while read file; do
-          original_filename=$(basename "$file")
-          file_extension="${original_filename##*.}"
-
-          # 根据文件类型生成新的文件名
-          if [[ "$original_filename" == *"_report.html" ]]; then
-            # HTML 报告文件
-            new_filename="${VIDEO_FILENAME}_report.html"
-          else
-            # 截图文件
-            new_filename="${VIDEO_FILENAME}.${file_extension}"
-          fi
-
-          echo "- \`$new_filename\` ($(du -h "$file" | cut -f1))" >> release_notes.md
+          echo "- \`$(basename "$file")\` ($(du -h "$file" | cut -f1))" >> release_notes.md
         done
         echo "- \`${VIDEO_FILENAME}_all_files.zip\` (包含所有文件的压缩包)" >> release_notes.md
         echo "" >> release_notes.md
@@ -203,30 +195,14 @@ jobs:
           --notes-file release_notes.md
 
         echo "✅ Release 创建成功: $RELEASE_TAG"
-
-        # 创建临时目录用于重命名文件
-        mkdir -p temp_upload
-
-        # 重命名并上传所有截图文件
-        echo "📤 重命名并上传截图文件..."
+        
+        # 上传所有截图文件
+        echo "📤 上传截图文件..."
         find video_input/ -type f \( -name "*.webp" -o -name "*.jpg" -o -name "*.png" -o -name "*.html" \) ! -name "video.mp4" | while read file; do
-          original_filename=$(basename "$file")
-          file_extension="${original_filename##*.}"
-
-          # 根据文件类型生成新的文件名
-          if [[ "$original_filename" == *"_report.html" ]]; then
-            # HTML 报告文件
-            new_filename="${VIDEO_FILENAME}_report.html"
-          else
-            # 截图文件
-            new_filename="${VIDEO_FILENAME}.${file_extension}"
-          fi
-
-          # 复制文件到临时目录并重命名
-          cp "$file" "temp_upload/$new_filename"
-          echo "📤 上传: $original_filename -> $new_filename"
-
-          gh release upload "$RELEASE_TAG" "temp_upload/$new_filename" \
+          filename=$(basename "$file")
+          echo "📤 上传: $filename"
+          
+          gh release upload "$RELEASE_TAG" "$file" \
             --repo "$TARGET_REPO" \
             --clobber
         done
@@ -263,19 +239,7 @@ jobs:
         echo ""
         echo "📊 可下载的文件:"
         find video_input/ -type f \( -name "*.webp" -o -name "*.jpg" -o -name "*.png" -o -name "*.html" \) ! -name "video.mp4" | while read file; do
-          original_filename=$(basename "$file")
-          file_extension="${original_filename##*.}"
-
-          # 根据文件类型生成新的文件名
-          if [[ "$original_filename" == *"_report.html" ]]; then
-            # HTML 报告文件
-            new_filename="${VIDEO_FILENAME}_report.html"
-          else
-            # 截图文件
-            new_filename="${VIDEO_FILENAME}.${file_extension}"
-          fi
-
-          echo "  - $new_filename ($(du -h "$file" | cut -f1))"
+          echo "  - $(basename "$file") ($(du -h "$file" | cut -f1))"
         done
         echo "  - ${VIDEO_FILENAME}_all_files.zip (包含所有文件的压缩包)"
         echo ""

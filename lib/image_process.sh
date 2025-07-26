@@ -594,9 +594,23 @@ generate_split_preview() {
     echo "将生成 $total_splits 个分割图"
     echo "分割策略: 前 $((total_splits - 1)) 个分割图各包含 $max_frames_per_split 帧，最后一个分割图包含剩余帧"
 
+    # 暂时禁用并行分割图生成，因为ImageMagick在并行环境中有资源竞争问题
+    # 场景检测的并行优化已经提供了主要的性能提升
+    echo -e "${CYAN}使用串行分割图生成 (避免ImageMagick资源竞争)${NC}"
+    generate_split_preview_serial "$output_file" "$total_splits" "$max_frames_per_split" "${frame_files[@]}"
+}
+
+# 串行分割图生成
+generate_split_preview_serial() {
+    local output_file="$1"
+    local total_splits="$2"
+    local max_frames_per_split="$3"
+    shift 3
+    local frame_files=("$@")
+    local total_frames=${#frame_files[@]}
+
     # 生成每个分割图
     local split_files=()
-    local split_index=1
     local frame_index=0
 
     for ((split=1; split<=total_splits; split++)); do
@@ -645,6 +659,166 @@ generate_split_preview() {
 
         frame_index=$((end_frame_index + 1))
     done
+
+    echo -e "${GREEN}多图片分割完成，共生成 ${#split_files[@]} 个文件:${NC}"
+    for split_file in "${split_files[@]}"; do
+        echo "  - $(basename "$split_file")"
+    done
+
+    # 不生成重复的主预览图，分割图已经包含了所有内容
+    echo -e "${GREEN}分割模式：主预览图为 $(basename "${split_files[0]}")${NC}"
+    echo -e "${YELLOW}提示：所有内容已分割到 ${#split_files[@]} 个文件中，无需额外的主预览图${NC}"
+
+    return 0
+}
+
+# 并行分割图生成
+generate_split_preview_parallel() {
+    local output_file="$1"
+    local total_splits="$2"
+    local max_frames_per_split="$3"
+    shift 3
+    local frame_files=("$@")
+    local total_frames=${#frame_files[@]}
+
+    # 创建临时目录存储帧文件列表
+    local temp_frame_list="$TEMP_DIR/frame_files_list.txt"
+    printf '%s\n' "${frame_files[@]}" > "$temp_frame_list"
+
+    # 创建分割作业队列
+    local split_jobs=()
+    local frame_index=0
+
+    for ((split=1; split<=total_splits; split++)); do
+        local split_output_file="${output_file%.*}_part${split}.${FORMAT}"
+
+        # 计算当前分割图的帧数
+        local current_frames_count
+        if [ $split -lt $total_splits ]; then
+            current_frames_count=$max_frames_per_split
+        else
+            current_frames_count=$((total_frames - frame_index))
+        fi
+
+        local end_frame_index=$((frame_index + current_frames_count - 1))
+        if [ $end_frame_index -ge $total_frames ]; then
+            end_frame_index=$((total_frames - 1))
+        fi
+
+        # 创建作业信息：split_index:start_frame:end_frame:output_file
+        split_jobs+=("$split:$frame_index:$end_frame_index:$split_output_file")
+        frame_index=$((end_frame_index + 1))
+    done
+
+    # 并行处理分割图
+    local completed_jobs=0
+    local active_jobs=0
+    local job_index=0
+    local pids=()
+    local parallel_jobs=${PARALLEL_JOBS:-4}
+
+    echo "开始并行生成 $total_splits 个分割图..."
+
+    while [ $completed_jobs -lt ${#split_jobs[@]} ] || [ $active_jobs -gt 0 ]; do
+        # 启动新作业
+        while [ $active_jobs -lt $parallel_jobs ] && [ $job_index -lt ${#split_jobs[@]} ]; do
+            local job="${split_jobs[$job_index]}"
+            local split_index=$(echo "$job" | cut -d: -f1)
+            local start_frame=$(echo "$job" | cut -d: -f2)
+            local end_frame=$(echo "$job" | cut -d: -f3)
+            local split_output_file=$(echo "$job" | cut -d: -f4)
+
+            # 启动后台作业
+            (
+                generate_single_split_job "$split_index" "$start_frame" "$end_frame" "$split_output_file" "$total_splits" "$temp_frame_list"
+            ) &
+
+            pids+=($!)
+            active_jobs=$((active_jobs + 1))
+            job_index=$((job_index + 1))
+        done
+
+        # 检查已完成的作业
+        local new_pids=()
+        for pid in "${pids[@]}"; do
+            if ! kill -0 $pid 2>/dev/null; then
+                wait $pid
+                local exit_code=$?
+                active_jobs=$((active_jobs - 1))
+                completed_jobs=$((completed_jobs + 1))
+
+                if [ $exit_code -eq 0 ]; then
+                    printf "\r分割图生成进度: %d%% (%d/%d) 已完成" $((completed_jobs * 100 / total_splits)) $completed_jobs $total_splits
+                else
+                    echo -e "\n${RED}分割图生成失败${NC}"
+                    # 终止其他进程
+                    for remaining_pid in "${pids[@]}"; do
+                        kill $remaining_pid 2>/dev/null
+                    done
+                    return 1
+                fi
+            else
+                new_pids+=($pid)
+            fi
+        done
+        pids=("${new_pids[@]}")
+
+        sleep 0.1
+    done
+
+    printf "\n"
+
+    # 收集生成的文件
+    local split_files=()
+    for ((split=1; split<=total_splits; split++)); do
+        local split_output_file="${output_file%.*}_part${split}.${FORMAT}"
+        if [ -f "$split_output_file" ]; then
+            split_files+=("$split_output_file")
+        fi
+    done
+
+    echo -e "${GREEN}并行分割图生成完成，共生成 ${#split_files[@]} 个文件:${NC}"
+    for split_file in "${split_files[@]}"; do
+        echo "  - $(basename "$split_file")"
+    done
+
+    echo -e "${GREEN}分割模式：主预览图为 $(basename "${split_files[0]}")${NC}"
+    echo -e "${YELLOW}提示：所有内容已分割到 ${#split_files[@]} 个文件中，无需额外的主预览图${NC}"
+
+    return 0
+}
+
+# 单个分割图生成作业
+generate_single_split_job() {
+    local split_index="$1"
+    local start_frame="$2"
+    local end_frame="$3"
+    local split_output_file="$4"
+    local total_splits="$5"
+    local frame_list_file="$6"
+
+    # 从文件中读取帧文件列表
+    local current_frames=()
+    local line_num=0
+    while IFS= read -r frame_file; do
+        if [ $line_num -ge $start_frame ] && [ $line_num -le $end_frame ]; then
+            current_frames+=("$frame_file")
+        fi
+        line_num=$((line_num + 1))
+    done < "$frame_list_file"
+
+    local current_frames_count=${#current_frames[@]}
+    local current_rows=$(((current_frames_count + COLUMN - 1) / COLUMN))
+
+    # 生成分割信息
+    local part_info="第${split_index}部分 (共${total_splits}部分)"
+
+    # 生成当前分割图
+    if generate_single_grid_with_part "${current_frames[@]}" "$split_output_file" "$part_info"; then
+        return 0
+    else
+        return 1
+    fi
 
     echo -e "${GREEN}多图片分割完成，共生成 ${#split_files[@]} 个文件:${NC}"
     for split_file in "${split_files[@]}"; do
@@ -779,6 +953,153 @@ generate_single_grid_internal() {
 
     # 清理临时文件
     rm -f "${row_files[@]}" "$temp_grid_file" "$temp_header_file"
+
+    return 0
+}
+
+# 并行分割图生成 V2 - 真正的并行处理
+generate_split_preview_parallel_v2() {
+    local output_file="$1"
+    local total_splits="$2"
+    local max_frames_per_split="$3"
+    shift 3
+    local frame_files=("$@")
+    local total_frames=${#frame_files[@]}
+
+    echo "开始并行生成 $total_splits 个分割图..."
+
+    # 创建作业队列
+    local split_jobs=()
+    local frame_index=0
+
+    for ((split=1; split<=total_splits; split++)); do
+        local split_output_file="${output_file%.*}_part${split}.${FORMAT}"
+
+        # 计算当前分割图的帧数
+        local current_frames_count
+        if [ $split -lt $total_splits ]; then
+            current_frames_count=$max_frames_per_split
+        else
+            current_frames_count=$((total_frames - frame_index))
+        fi
+
+        local end_frame_index=$((frame_index + current_frames_count - 1))
+        if [ $end_frame_index -ge $total_frames ]; then
+            end_frame_index=$((total_frames - 1))
+        fi
+
+        # 创建当前分割的帧文件列表
+        local current_frames=()
+        for ((i=frame_index; i<=end_frame_index; i++)); do
+            current_frames+=("${frame_files[i]}")
+        done
+
+        # 启动并行作业
+        (
+            local part_info="第${split}部分 (共${total_splits}部分)"
+            local current_frames_count=${#current_frames[@]}
+            local current_rows=$(((current_frames_count + COLUMN - 1) / COLUMN))
+
+            echo "并行生成分割图 $split/$total_splits: $(basename "$split_output_file") (${current_frames_count}帧)"
+
+            if generate_single_grid_with_part "${current_frames[@]}" "$split_output_file" "$part_info"; then
+                echo "✓ 分割图 $split 生成完成 (${current_rows}行)"
+                echo "SUCCESS_$split" > "$split_output_file.status"
+            else
+                echo "✗ 分割图 $split 生成失败"
+                echo "FAILED_$split" > "$split_output_file.status"
+                exit 1
+            fi
+        ) &
+
+        split_jobs+=($!)
+        frame_index=$((end_frame_index + 1))
+    done
+
+    # 监控并行作业进度
+    echo "监控并行分割图生成进度:"
+    local completed_jobs=0
+    local failed_jobs=0
+    local job_status=()
+
+    # 初始化作业状态
+    for ((i=1; i<=total_splits; i++)); do
+        job_status[i]="处理中"
+    done
+
+    while [ $completed_jobs -lt $total_splits ]; do
+        sleep 0.5
+
+        # 检查每个作业的状态
+        local new_completed=0
+        local status_line=""
+
+        for ((i=1; i<=total_splits; i++)); do
+            local split_output_file="${output_file%.*}_part${i}.${FORMAT}"
+            local status_file="$split_output_file.status"
+
+            if [ -f "$status_file" ]; then
+                local status_content=$(cat "$status_file" 2>/dev/null)
+                if [ "$status_content" = "SUCCESS_$i" ]; then
+                    job_status[i]="✓完成"
+                    new_completed=$((new_completed + 1))
+                elif [ "$status_content" = "FAILED_$i" ]; then
+                    job_status[i]="✗失败"
+                    failed_jobs=$((failed_jobs + 1))
+                    new_completed=$((new_completed + 1))
+                fi
+            fi
+
+            # 构建状态显示
+            if [ $i -eq 1 ]; then
+                status_line="分割${i}:${job_status[i]}"
+            else
+                status_line="$status_line | 分割${i}:${job_status[i]}"
+            fi
+        done
+
+        # 更新显示
+        local progress_percent=$((new_completed * 100 / total_splits))
+        printf "\r分割图进度: %d%% [%s]" $progress_percent "$status_line"
+
+        completed_jobs=$new_completed
+    done
+
+    # 等待所有作业完成
+    for pid in "${split_jobs[@]}"; do
+        wait $pid 2>/dev/null
+    done
+
+    printf "\n"
+
+    # 清理状态文件
+    for ((i=1; i<=total_splits; i++)); do
+        local split_output_file="${output_file%.*}_part${i}.${FORMAT}"
+        rm -f "$split_output_file.status"
+    done
+
+    # 检查结果
+    if [ $failed_jobs -gt 0 ]; then
+        echo -e "${RED}并行分割图生成失败: $failed_jobs/$total_splits 个分割图失败${NC}"
+        return 1
+    fi
+
+    # 收集生成的文件
+    local split_files=()
+    for ((split=1; split<=total_splits; split++)); do
+        local split_output_file="${output_file%.*}_part${split}.${FORMAT}"
+        if [ -f "$split_output_file" ]; then
+            split_files+=("$split_output_file")
+        fi
+    done
+
+    echo -e "${GREEN}并行分割图生成完成，共生成 ${#split_files[@]} 个文件:${NC}"
+    for split_file in "${split_files[@]}"; do
+        echo "  - $(basename "$split_file")"
+    done
+
+    echo -e "${GREEN}分割模式：主预览图为 $(basename "${split_files[0]}")${NC}"
+    echo -e "${YELLOW}提示：所有内容已分割到 ${#split_files[@]} 个文件中，无需额外的主预览图${NC}"
 
     return 0
 }

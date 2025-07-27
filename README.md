@@ -1,6 +1,6 @@
 # 视频预览生成器
 
-[![Version](https://img.shields.io/badge/version-0.4.1-blue.svg)](https://github.com/kkfive/shot-stitch)
+[![Version](https://img.shields.io/badge/version-0.4.2-blue.svg)](https://github.com/kkfive/shot-stitch)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Docker](https://img.shields.io/badge/docker-supported-blue.svg)](Dockerfile)
 
@@ -33,6 +33,12 @@
 - **智能分批**: 自动按帧数或尺寸限制分割大型预览图
 - **灵活控制**: 支持用户自定义每部分最大帧数
 - **强制分批**: 可强制启用分批模式，适合特殊需求
+
+### 🔧 稳定性增强 (v0.4.2 新增)
+- **并行处理修复**: 修复FFmpeg输出重定向错误，恢复并行场景检测功能
+- **智能阈值调整**: 自动调整过高的场景检测阈值，提高检测成功率
+- **错误处理改进**: 增强后台进程管理和错误恢复机制
+- **进度显示优化**: 提供更准确的进度反馈和状态报告
 
 ### 🌐 国际化支持 (v0.4.1 新增)
 - **中文文件名支持**: 自动检测并解码URL编码的中文文件名

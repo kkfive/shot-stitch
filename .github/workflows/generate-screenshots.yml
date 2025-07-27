@@ -255,6 +255,11 @@ jobs:
     
     - name: 准备 Release 信息
       run: |
+        # 定义查找生成文件的函数
+        find_generated_files() {
+          find video_input/ -type f \( -name "*.webp" -o -name "*.jpg" -o -name "*.png" -o -name "*.html" \) ! -name "$FINAL_FILENAME"
+        }
+
         TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
         RELEASE_TAG="screenshots-${TIMESTAMP}"
         RELEASE_NAME="$VIDEO_FILENAME 截图 - $(date '+%Y-%m-%d %H:%M:%S')"
@@ -264,7 +269,7 @@ jobs:
         echo "RELEASE_TAG=$RELEASE_TAG" >> $GITHUB_ENV
         echo "RELEASE_NAME=$RELEASE_NAME" >> $GITHUB_ENV
         echo "TARGET_REPO=$TARGET_REPO" >> $GITHUB_ENV
-        
+
         # 创建 Release 描述
         echo "# 视频截图文件" > release_notes.md
         echo "" >> release_notes.md
@@ -285,11 +290,16 @@ jobs:
         echo "" >> release_notes.md
         echo "---" >> release_notes.md
         echo "*由 GitHub Actions 自动生成*" >> release_notes.md
-        
+
         echo "✅ Release 信息准备完成"
     
     - name: 创建 Release 并上传文件
       run: |
+        # 定义查找生成文件的函数
+        find_generated_files() {
+          find video_input/ -type f \( -name "*.webp" -o -name "*.jpg" -o -name "*.png" -o -name "*.html" \) ! -name "$FINAL_FILENAME"
+        }
+
         echo "🚀 创建 Release 并上传文件..."
 
         # 创建 Release
@@ -299,7 +309,7 @@ jobs:
           --notes-file release_notes.md
 
         echo "✅ Release 创建成功: $RELEASE_TAG"
-        
+
         # 上传所有截图文件
         echo "📤 上传截图文件..."
         find_generated_files | while read file; do
@@ -337,6 +347,11 @@ jobs:
     
     - name: 生成下载信息
       run: |
+        # 定义查找生成文件的函数
+        find_generated_files() {
+          find video_input/ -type f \( -name "*.webp" -o -name "*.jpg" -o -name "*.png" -o -name "*.html" \) ! -name "$FINAL_FILENAME"
+        }
+
         echo "🎉 截图已成功上传到目标仓库!"
         echo ""
         echo "📍 目标仓库: $TARGET_REPO"

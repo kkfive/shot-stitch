@@ -680,6 +680,16 @@ validate_config_param_value() {
         "MAX_FRAMES_PER_PART")
             [[ "$param_value" =~ ^[0-9]+$ ]] || return 1
             ;;
+        "SCENE_DETECTION_MAX_SEGMENTS")
+            # 支持 auto 或正整数
+            [[ "$param_value" = "auto" ]] || [[ "$param_value" =~ ^[1-9][0-9]*$ ]] || return 1
+            ;;
+        "SCENE_DETECTION_SEGMENT_TIMEOUT")
+            [[ "$param_value" =~ ^[0-9]+$ ]] || return 1
+            ;;
+        "SCENE_DETECTION_SEGMENTS_MULTIPLIER")
+            [[ "$param_value" =~ ^[1-9][0-9]*$ ]] || return 1
+            ;;
         *)
             return 0  # 未知参数不验证
             ;;
@@ -856,9 +866,19 @@ load_and_validate_config() {
             THEME_WARNING) THEME_WARNING="$value" ;;
             THEME_ERROR) THEME_ERROR="$value" ;;
             THEME_INFO) THEME_INFO="$value" ;;
-            # 场景检测优化配置
-            SCENE_DETECTION_MAX_SEGMENTS) SCENE_DETECTION_MAX_SEGMENTS="$value" ;;
-            SCENE_DETECTION_SEGMENT_TIMEOUT) SCENE_DETECTION_SEGMENT_TIMEOUT="$value" ;;
+            # 场景检测配置（简化版）
+            SCENE_DETECTION_MAX_SEGMENTS)
+                SCENE_DETECTION_MAX_SEGMENTS="$value"
+                export SCENE_DETECTION_MAX_SEGMENTS
+                ;;
+            SCENE_DETECTION_SEGMENT_TIMEOUT)
+                SCENE_DETECTION_SEGMENT_TIMEOUT="$value"
+                export SCENE_DETECTION_SEGMENT_TIMEOUT
+                ;;
+            SCENE_DETECTION_SEGMENTS_MULTIPLIER)
+                SCENE_DETECTION_SEGMENTS_MULTIPLIER="$value"
+                export SCENE_DETECTION_SEGMENTS_MULTIPLIER
+                ;;
             *)
                 echo -e "${YELLOW}警告: 未知配置参数 '$key' 在 $config_file:$line_num${NC}" ;;
         esac
@@ -894,8 +914,10 @@ generate_output_filename() {
 
         case "$MODE" in
             "scene")
-                # 场景检测模式：video_scene_c5_min30_max300_t03_g5_q100.webp
-                suffix="scene_c${COLUMN}_min${MIN_INTERVAL}_max${MAX_INTERVAL}_t$(echo "$SCENE_THRESHOLD" | sed 's/0\.//')_g${GAP}_q${QUALITY}"
+                # 场景检测模式：video_scene_c5_min30_max300_t02_g5_q100.webp
+                # 格式化阈值：0.2 -> t02, 0.15 -> t015
+                local threshold_suffix=$(echo "$SCENE_THRESHOLD" | sed 's/0\.//' | sed 's/\.//')
+                suffix="scene_c${COLUMN}_min${MIN_INTERVAL}_max${MAX_INTERVAL}_t${threshold_suffix}_g${GAP}_q${QUALITY}"
                 ;;
             "keyframe")
                 # 关键帧模式：video_keyframe_c5_min5_g5_q100.webp

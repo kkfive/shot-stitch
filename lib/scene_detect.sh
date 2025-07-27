@@ -16,6 +16,22 @@ else
     SUPPORTS_SCENE_ASSOCIATIVE_ARRAYS=false
 fi
 
+# 计算分段数的辅助函数
+calculate_segment_count() {
+    local max_segments=${SCENE_DETECTION_MAX_SEGMENTS:-auto}
+    local cpu_cores=$(detect_cpu_cores)
+    local segments_multiplier=${SCENE_DETECTION_SEGMENTS_MULTIPLIER:-4}
+
+    if [ "$max_segments" = "auto" ]; then
+        echo $((cpu_cores * segments_multiplier))
+    elif [[ "$max_segments" =~ ^[0-9]+$ ]]; then
+        echo "$max_segments"
+    else
+        # 配置无效，使用自动计算
+        echo $((cpu_cores * segments_multiplier))
+    fi
+}
+
 # 场景检测函数
 detect_scene_changes() {
     local video_file="$1"
@@ -122,7 +138,7 @@ detect_scene_changes_optimized() {
     local temp_progress_file="$TEMP_DIR/scene_progress_optimized.txt"
 
     # 使用优化的场景检测参数
-    local cpu_cores=$(nproc 2>/dev/null || echo 4)
+    local cpu_cores=$(detect_cpu_cores)
 
     echo "使用优化参数: 多线程($cpu_cores核心), 降采样分析"
 
@@ -255,38 +271,39 @@ detect_scene_changes_optimized() {
     return 0
 }
 
-# 超级优化的场景检测算法（针对超大文件）
-detect_scene_changes_ultra_optimized() {
+# 标准场景检测算法（保持质量和精度）
+detect_scene_changes_standard() {
     local video_file="$1"
     local threshold="$2"
     local scene_times=()
 
-    echo -e "${YELLOW}正在使用超级优化算法分析视频场景变化...${NC}"
+    echo -e "${YELLOW}正在使用标准算法分析视频场景变化...${NC}"
 
     # 记录开始时间
     local start_time=$(date +%s)
 
     # 创建临时文件
-    local temp_scene_file="$TEMP_DIR/scene_detection_ultra.txt"
-    local temp_progress_file="$TEMP_DIR/scene_progress_ultra.txt"
+    local temp_scene_file="$TEMP_DIR/scene_detection_standard.txt"
+    local temp_progress_file="$TEMP_DIR/scene_progress_standard.txt"
 
-    # 使用超级优化的场景检测参数
-    local cpu_cores=$(nproc 2>/dev/null || echo 4)
+    # 使用标准的场景检测参数
+    local cpu_cores=$(detect_cpu_cores)
 
-    echo "使用超级优化参数: 多线程($cpu_cores核心), 极度降采样分析"
+    echo "使用标准参数: 多线程($cpu_cores核心), 保持检测质量"
 
-    # 超级优化策略：
-    # 1. 降低到320px分辨率
-    # 2. 降低到1fps采样率
-    # 3. 使用更宽松的场景检测阈值
-    # 4. 跳过更多帧进行快速分析
-    local adjusted_threshold="0.21"  # 使用更宽松的固定阈值
+    # 标准策略：保持合理的质量参数
+    # 1. 640p分辨率（保持检测精度）
+    # 2. 1fps采样率（足够的检测密度）
+    # 3. 严格遵守用户配置的阈值
+    # 4. 不私自修改任何参数
 
     ffmpeg -i "$video_file" \
-        -vf "scale=320:-1,fps=1,select='gt(scene,$adjusted_threshold)',showinfo" \
+        -vf "scale=640:-1,fps=1,select='gt(scene,$threshold)',showinfo" \
         -f null - \
         -threads "$cpu_cores" \
         -preset ultrafast \
+        -nostats -loglevel error \
+        -avoid_negative_ts make_zero \
         -progress "$temp_progress_file" \
         2>"$temp_scene_file" &
 
@@ -308,16 +325,22 @@ detect_scene_changes_ultra_optimized() {
             printf " (%ds)" $elapsed
         fi
 
-        # 简化超时保护（使用固定的合理超时时间）
+        # 超时保护：遵循配置文件设置，0表示无超时
         local timeout_limit=${SCENE_DETECTION_SEGMENT_TIMEOUT:-1800}  # 使用分段超时配置，默认30分钟
 
-        if [ $elapsed -gt $timeout_limit ]; then
+        if [ "$timeout_limit" -gt 0 ] && [ $elapsed -gt $timeout_limit ]; then
             echo " 超时(${timeout_limit}s)，终止超级优化检测"
             kill $ffmpeg_pid 2>/dev/null
             rm -f "$temp_scene_file" "$temp_progress_file"
             echo -e "${YELLOW}超级优化检测超时，回退到并行算法${NC}"
-            detect_scene_changes_parallel "$video_file" "$threshold" 4 "$timeout_limit"
+            local segment_count=$(calculate_segment_count)
+            detect_scene_changes_parallel "$video_file" "$threshold" "$segment_count" "$timeout_limit"
             return $?
+        elif [ "$timeout_limit" -eq 0 ]; then
+            # 无超时模式，每60秒显示一次进度
+            if [ $((elapsed % 60)) -eq 0 ] && [ $elapsed -gt 0 ]; then
+                printf " (%ds,无超时限制)" $elapsed
+            fi
         fi
     done
 
@@ -385,6 +408,8 @@ detect_scene_changes_ultra_optimized() {
     return 0
 }
 
+
+
 # 分段并行场景检测算法
 detect_scene_changes_parallel() {
     local video_file="$1"
@@ -404,26 +429,37 @@ detect_scene_changes_parallel() {
         return $?
     fi
 
-    # 优化分段策略 - 根据CPU核心数和视频时长动态调整
-    local cpu_cores=$(nproc 2>/dev/null || echo 4)
-    local min_segment_duration=180  # 最小3分钟一段，提高并行度
-    local optimal_segments=$((cpu_cores * 2))  # 每个核心2个分段，提高并行效率
+    # 简化的分段策略 - 支持auto和数字两种模式
+    local cpu_cores=$(detect_cpu_cores)
+    local segments_multiplier=${SCENE_DETECTION_SEGMENTS_MULTIPLIER:-4}
+    local min_segment_duration=30  # 最小分段时长30秒
 
-    # 限制最大分段数
-    if [ $optimal_segments -gt $max_segments ]; then
-        optimal_segments=$max_segments
+    echo "分段策略配置: CPU核心=${cpu_cores}, 配置值=${max_segments}"
+
+    local segment_count
+    if [ "$max_segments" = "auto" ]; then
+        # 自动模式: CPU核心数 × 倍数
+        segment_count=$((cpu_cores * segments_multiplier))
+        echo "自动分段模式: ${cpu_cores} × ${segments_multiplier} = ${segment_count} 个分段"
+    elif [[ "$max_segments" =~ ^[0-9]+$ ]]; then
+        # 数字模式: 使用指定的分段数
+        segment_count=$max_segments
+        echo "手动分段模式: 使用指定的 ${segment_count} 个分段"
+    else
+        # 无效配置，使用默认值
+        segment_count=$((cpu_cores * segments_multiplier))
+        echo "配置无效，使用默认: ${segment_count} 个分段"
     fi
 
-    local segment_count=$optimal_segments
+    # 根据视频时长调整分段数，确保每段不少于最小时长
     local segment_duration=$((duration_int / segment_count))
-
-    # 如果分段太短，减少分段数
     if [ $segment_duration -lt $min_segment_duration ]; then
         segment_count=$((duration_int / min_segment_duration))
         if [ $segment_count -lt 1 ]; then
             segment_count=1
         fi
         segment_duration=$((duration_int / segment_count))
+        echo "分段调整: 因时长限制调整为 ${segment_count} 个分段 (每段${segment_duration}秒)"
     fi
 
     # 确保至少有2个分段才使用并行
@@ -434,6 +470,7 @@ detect_scene_changes_parallel() {
     fi
 
     echo "分段策略: ${segment_count} 个段, 每段约 ${segment_duration}s, 并行处理"
+    echo "优化策略: 640p分辨率, 1fps采样率, 无超时限制确保完成"
 
     # 记录开始时间
     local start_time=$(date +%s)
@@ -441,7 +478,7 @@ detect_scene_changes_parallel() {
     # 创建分段作业
     local segment_pids=()
     local segment_files=()
-    local cpu_cores=$(nproc 2>/dev/null || echo 4)
+    local cpu_cores=$(detect_cpu_cores)
 
     for ((i=0; i<segment_count; i++)); do
         local segment_start=$((i * segment_duration))
@@ -480,159 +517,97 @@ detect_scene_changes_parallel() {
 
 
 
-            # macOS兼容的超时机制，带进度监控
-            if [ "$timeout_setting" -gt 0 ]; then
-                # 启动ffmpeg进程（简化版本，使用文件大小估算进度）
-                local segment_duration=$((segment_end_time - segment_start_time))
+            # 统一的分段处理：不区分超时/无超时模式，统一处理逻辑
+            local segment_display_id=$(printf "%02d" $((segment_index + 1)))
 
-                # 启动FFmpeg进程（修复场景检测filter）
-                # 创建错误日志文件
-                local error_log="$segment_output_file.error"
-
-
-
-                # 使用正确的场景检测filter（修复阈值问题）
-                # 如果阈值太高，自动降低
-                local effective_threshold="$scene_threshold"
-                if (( $(echo "$scene_threshold > 0.15" | bc -l) )); then
-                    effective_threshold="0.1"
-                    echo "场景阈值过高($scene_threshold)，自动调整为 $effective_threshold"
+            # 只在第一个分段时输出汇总信息
+            if [ $segment_index -eq 0 ]; then
+                local timeout_desc="无限制"
+                if [ "$timeout_setting" -gt 0 ]; then
+                    timeout_desc="${timeout_setting}秒"
                 fi
+                echo "分段配置: 共${segment_count}个分段, 超时=${timeout_desc}, 场景阈值=${scene_threshold}"
+            fi
 
-                # 修复输出重定向：showinfo输出到stderr，需要正确捕获
-                ffmpeg -ss "$segment_start_time" -t "$segment_duration" -i "$video_input_file" \
-                    -vf "scale=640:-1,fps=1,select='gt(scene,$effective_threshold)',showinfo" \
-                    -f null - \
-                    -threads "$segment_threads" \
-                    -preset ultrafast \
-                    -nostats -loglevel info \
-                    >"$error_log" 2>"$segment_output_file" &
-                local ffmpeg_pid=$!
+            local segment_duration=$((segment_end_time - segment_start_time))
+            local error_log="$segment_output_file.error"
 
-                # 启动进度监控子进程
-                (
-                    local start_time=$(date +%s)
-                    while kill -0 "$ffmpeg_pid" 2>/dev/null; do
-                        local current_time=$(date +%s)
-                        local elapsed=$((current_time - start_time))
+            # 严格遵守用户配置的阈值，不私自修改
+            local effective_threshold="$scene_threshold"
 
-                        # 基于时间估算进度（更积极的估算）
-                        if [ "$segment_duration" -gt 0 ]; then
-                            # 使用更积极的进度估算，场景检测通常比实时快
-                            local estimated_progress=$((elapsed * 200 / segment_duration))
-                            if [ "$estimated_progress" -gt 95 ]; then estimated_progress=95; fi
-                            if [ "$estimated_progress" -lt 0 ]; then estimated_progress=0; fi
-                            echo "$estimated_progress" > "${progress_file}.percent"
+            # 启动FFmpeg进程：统一的质量参数，不因超时设置而改变
+            ffmpeg -ss "$segment_start_time" -t "$segment_duration" -i "$video_input_file" \
+                -vf "scale=640:-1,fps=1,select='gt(scene,$effective_threshold)',showinfo" \
+                -f null - \
+                -threads "$segment_threads" \
+                -preset ultrafast \
+                -nostats -loglevel info \
+                -avoid_negative_ts make_zero \
+                >"$error_log" 2>"$segment_output_file" &
+            local ffmpeg_pid=$!
 
+            # 启动统一的进度监控子进程
+            (
+                local start_time=$(date +%s)
+                while kill -0 "$ffmpeg_pid" 2>/dev/null; do
+                    local current_time=$(date +%s)
+                    local elapsed=$((current_time - start_time))
 
-                        fi
+                    # 基于时间估算进度（移除95%限制，让进度自然增长）
+                    if [ "$segment_duration" -gt 0 ]; then
+                        # 使用更保守的进度估算，避免过早达到100%
+                        local estimated_progress=$((elapsed * 100 / segment_duration))
+                        if [ "$estimated_progress" -gt 99 ]; then estimated_progress=99; fi
+                        if [ "$estimated_progress" -lt 0 ]; then estimated_progress=0; fi
+                        echo "$estimated_progress" > "${progress_file}.percent"
+                    fi
 
-                        sleep 2
-                    done
+                    sleep 2
+                done
 
-                    # 进程完成，设置100%
-                    echo "100" > "${progress_file}.percent"
-                ) &
-                local monitor_pid=$!
+                # 进程完成，设置100%
+                echo "100" > "${progress_file}.percent"
+            ) &
+            local monitor_pid=$!
 
-                # 等待进程完成或超时
+            # 统一的等待逻辑：根据超时设置决定等待方式
+            if [ "$timeout_setting" -gt 0 ]; then
+                # 有超时限制：扩展超时时间，但最终仍会等待完成
+                local extended_timeout=$((timeout_setting * 3))
+                echo "分段${segment_display_id}: 扩展超时时间 ${extended_timeout}秒"
+
                 local elapsed=0
-                while [ "$elapsed" -lt "$timeout_setting" ]; do
+                while [ "$elapsed" -lt "$extended_timeout" ]; do
                     if ! kill -0 "$ffmpeg_pid" 2>/dev/null; then
-                        # 进程已完成
-                        wait "$ffmpeg_pid"
-                        local exit_code=$?
-
-                        # 停止监控进程
-                        kill "$monitor_pid" 2>/dev/null
-                        wait "$monitor_pid" 2>/dev/null
-
-                        if [ "$exit_code" -ne 0 ]; then
-                            echo "SEGMENT_${segment_index}_FAILED" > "$segment_output_file"
-
-                        fi
-                        echo "100" > "${progress_file}.percent"  # 标记完成
-                        return
+                        break  # 进程已完成
                     fi
                     sleep 1
                     elapsed=$((elapsed + 1))
+
+                    if [ $((elapsed % 60)) -eq 0 ]; then
+                        echo "分段${segment_display_id}: 已处理 ${elapsed}/${extended_timeout}秒"
+                    fi
                 done
 
-                # 超时，杀死进程
-                kill "$ffmpeg_pid" 2>/dev/null
-                kill "$monitor_pid" 2>/dev/null
-                wait "$ffmpeg_pid" 2>/dev/null
-                wait "$monitor_pid" 2>/dev/null
-                echo "SEGMENT_${segment_index}_TIMEOUT" > "$segment_output_file"
-                echo "TIMEOUT" > "${progress_file}.percent"
+                # 即使超时也等待完成，不强制杀死
+                if kill -0 "$ffmpeg_pid" 2>/dev/null; then
+                    echo "分段${segment_display_id}: 超过预期时间，继续等待完成..."
+                fi
+            fi
+
+            # 最终等待进程完成（无论是否有超时设置）
+            wait "$ffmpeg_pid"
+            local exit_code=$?
+
+            # 停止监控进程
+            kill "$monitor_pid" 2>/dev/null
+            wait "$monitor_pid" 2>/dev/null
+
+            # 处理结果
+            if [ "$exit_code" -ne 0 ]; then
+                echo "SEGMENT_${segment_index}_FAILED" > "$segment_output_file"
             else
-                # 无超时模式，但仍然监控进度
-                local segment_duration=$((segment_end_time - segment_start_time))
-                local error_log="$segment_output_file.error"
-
-
-
-                # 使用相同的阈值调整逻辑
-                local effective_threshold="$scene_threshold"
-                if (( $(echo "$scene_threshold > 0.15" | bc -l) )); then
-                    effective_threshold="0.1"
-                    # 阈值调整信息只显示一次
-                    if [ ! -f "/tmp/.scene_threshold_adjusted" ]; then
-                        echo "场景阈值过高($scene_threshold)，自动调整为 $effective_threshold"
-                        touch "/tmp/.scene_threshold_adjusted"
-                    fi
-                fi
-
-                # 修复输出重定向：showinfo输出到stderr，需要正确捕获
-                ffmpeg -ss "$segment_start_time" -t "$segment_duration" -i "$video_input_file" \
-                    -vf "scale=640:-1,fps=1,select='gt(scene,$effective_threshold)',showinfo" \
-                    -f null - \
-                    -threads "$segment_threads" \
-                    -preset ultrafast \
-                    -nostats -loglevel info \
-                    >"$error_log" 2>"$segment_output_file" &
-                local ffmpeg_pid=$!
-
-                # 启动进度监控子进程
-                (
-                    local start_time=$(date +%s)
-                    while kill -0 "$ffmpeg_pid" 2>/dev/null; do
-                        local current_time=$(date +%s)
-                        local elapsed=$((current_time - start_time))
-
-                        # 基于时间估算进度（更积极的估算）
-                        if [ "$segment_duration" -gt 0 ]; then
-                            # 使用更积极的进度估算，场景检测通常比实时快
-                            local estimated_progress=$((elapsed * 200 / segment_duration))
-                            if [ "$estimated_progress" -gt 95 ]; then estimated_progress=95; fi
-                            if [ "$estimated_progress" -lt 0 ]; then estimated_progress=0; fi
-                            echo "$estimated_progress" > "${progress_file}.percent"
-
-
-                        fi
-
-                        sleep 2
-                    done
-
-                    # 进程完成，设置100%
-                    echo "100" > "${progress_file}.percent"
-                ) &
-                local monitor_pid=$!
-
-                # 等待进程完成
-                wait "$ffmpeg_pid"
-                local exit_code=$?
-
-                # 停止监控进程
-                kill "$monitor_pid" 2>/dev/null
-                wait "$monitor_pid" 2>/dev/null
-
-                if [ "$exit_code" -ne 0 ]; then
-                    echo "SEGMENT_${segment_index}_FAILED" > "$segment_output_file"
-
-                else
-                    echo "100" > "${progress_file}.percent"  # 标记完成
-                fi
+                echo "100" > "${progress_file}.percent"
             fi
         ) &
 
@@ -693,7 +668,10 @@ detect_scene_changes_parallel() {
                         segment_progress[i]=0
                     fi
                 fi
-                new_completed=$((new_completed + 1))
+                # 只有成功的分段才计入完成数
+                if [ "${segment_status[i]}" = "✓完成" ]; then
+                    new_completed=$((new_completed + 1))
+                fi
             else
                 # 进程仍在运行，读取进度
                 local progress_percent=0
@@ -762,12 +740,13 @@ detect_scene_changes_parallel() {
             # 累计总进度
             total_progress=$((total_progress + segment_progress[i]))
 
-            # 构建状态显示
-            local segment_display="分段${i}:${segment_progress[i]}%"
+            # 构建状态显示（使用两位数格式，从01开始）
+            local display_id=$(printf "%02d" $((i + 1)))
+            local segment_display="分段${display_id}:${segment_progress[i]}%"
             if [ "${segment_status[i]}" = "✓完成" ]; then
-                segment_display="分段${i}:✓"
+                segment_display="分段${display_id}:✓"
             elif [ "${segment_status[i]}" = "✗失败" ]; then
-                segment_display="分段${i}:✗"
+                segment_display="分段${display_id}:✗"
             fi
 
             if [ $i -eq 0 ]; then
@@ -986,19 +965,20 @@ detect_scene_changes_adaptive() {
     elif [ "$file_size_mb" -lt 3000 ] && [ "$duration_minutes" -lt 300 ]; then
         # 大文件：优先使用并行算法
         echo "选择策略: 并行算法（大文件）"
-        if ! detect_scene_changes_parallel "$video_file" "$threshold" 6 300; then
+        # 使用配置文件中的分段数和超时设置
+        local segment_count=$(calculate_segment_count)
+        if ! detect_scene_changes_parallel "$video_file" "$threshold" "$segment_count" "${SCENE_DETECTION_SEGMENT_TIMEOUT:-300}"; then
             echo "并行算法失败，回退到优化算法"
             detect_scene_changes_optimized "$video_file" "$threshold"
         fi
     else
         # 超大文件：使用并行算法，更多分段
         echo "选择策略: 并行算法（超大文件，更多分段）"
-        if ! detect_scene_changes_parallel "$video_file" "$threshold" 8 600; then
-            echo "并行算法失败，回退到超级优化算法"
-            if ! detect_scene_changes_ultra_optimized "$video_file" "$threshold"; then
-                echo "超级优化算法也失败，回退到普通优化算法"
-                detect_scene_changes_optimized "$video_file" "$threshold"
-            fi
+        # 使用配置文件中的分段数，超大文件无超时限制
+        local segment_count=$(calculate_segment_count)
+        if ! detect_scene_changes_parallel "$video_file" "$threshold" "$segment_count" 0; then
+            echo "并行算法失败，回退到标准算法"
+            detect_scene_changes_standard "$video_file" "$threshold"
         fi
     fi
 }
@@ -1121,7 +1101,8 @@ generate_progress_bar_display() {
             *) status_icon="⏳" ;;
         esac
 
-        output="${output}  分段${i}: ${seg_bar} ${seg_progress}% ${status_icon}\n"
+        local display_id=$(printf "%02d" $((i + 1)))
+        output="${output}  分段${display_id}: ${seg_bar} ${seg_progress}% ${status_icon}\n"
     done
 
     printf "%b" "$output"

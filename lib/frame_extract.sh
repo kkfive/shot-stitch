@@ -39,16 +39,27 @@ add_timestamp_to_frame() {
         font_option="-font $font_file"
     fi
     
-    # 添加时间戳到图片
-    eval "magick \"$input_file\" \
-        $font_option \
-        -pointsize $font_size \
-        -fill \"white\" \
-        -stroke \"black\" \
-        -strokewidth 2 \
-        -gravity SouthWest \
-        -annotate +${margin}+${margin} \"$timestamp\" \
-        \"$output_file\""
+    # 添加时间戳到图片，使用数组避免eval
+    local magick_args=(
+        "magick" "$input_file"
+    )
+
+    if [ -n "$font_file" ]; then
+        magick_args+=("-font" "$font_file")
+    fi
+
+    magick_args+=(
+        "-pointsize" "$font_size"
+        "-fill" "white"
+        "-stroke" "black"
+        "-strokewidth" "2"
+        "-gravity" "SouthWest"
+        "-annotate" "+${margin}+${margin}"
+        "$timestamp"
+        "$output_file"
+    )
+
+    "${magick_args[@]}"
 }
 
 # 场景检测模式截取视频帧

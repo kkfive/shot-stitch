@@ -2,7 +2,7 @@
 # preview.sh - shot stitch
 #
 # Author: DreamyTZK
-# Version: 0.4.0
+# Version: 0.4.1
 # Description: Local video preview image generator
 
 # 获取脚本目录
@@ -77,8 +77,20 @@ main() {
     fi
 }
 
-# 错误处理
+# 信号处理函数
+handle_signal() {
+    local signal="$1"
+    echo ""
+    echo "收到信号 $signal，正在清理..."
+    cleanup
+    exit 130
+}
+
+# 错误处理和信号处理
 trap cleanup EXIT
+trap 'handle_signal INT' INT
+trap 'handle_signal TERM' TERM
+trap 'handle_signal HUP' HUP
 
 # 启动主程序
 main "$@"

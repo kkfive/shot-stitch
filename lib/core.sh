@@ -35,6 +35,9 @@ error_exit() {
     local message="$1"
     local exit_code="${2:-1}"
     log_fatal "$message"
+
+    # 确保在退出前清理资源
+    cleanup
     exit "$exit_code"
 }
 
@@ -61,7 +64,8 @@ validate_file_path() {
 # 简化的性能监控函数（替代performance.sh的核心功能）
 start_timer() {
     local timer_name="${1:-default}"
-    eval "TIMER_START_$timer_name=$(date +%s)"
+    # 使用declare替代eval，更安全
+    declare -g "TIMER_START_$timer_name=$(date +%s)"
 }
 
 end_timer() {
@@ -85,9 +89,27 @@ setup_temp_directory() {
     local video_file="$1"
     local video_dir=$(dirname "$video_file")
 
-    # 临时目录放在与视频同目录下
-    TEMP_DIR="$video_dir/.video_preview_tmp_$$"
-    mkdir -p "$TEMP_DIR"
+    # 验证视频目录路径
+    if ! validate_file_path "$video_dir" "video directory"; then
+        error_exit "视频目录路径无效: $video_dir"
+    fi
+
+    # 检查目录是否可写
+    if [ ! -w "$video_dir" ]; then
+        error_exit "视频目录不可写: $video_dir"
+    fi
+
+    # 临时目录放在与视频同目录下，使用更安全的命名
+    TEMP_DIR="$video_dir/.video_preview_tmp_$$_$(date +%s)"
+
+    # 确保临时目录不存在（避免冲突）
+    if [ -e "$TEMP_DIR" ]; then
+        error_exit "临时目录已存在: $TEMP_DIR"
+    fi
+
+    if ! mkdir -p "$TEMP_DIR"; then
+        error_exit "无法创建临时目录: $TEMP_DIR"
+    fi
 
     log_info "临时目录: $TEMP_DIR"
 }
@@ -234,32 +256,98 @@ load_config() {
 
 # 注意：load_config函数已被load_and_validate_config替代，但保留以兼容性
 
+# 全局进程跟踪数组
+declare -a BACKGROUND_PIDS=()
+
+# 添加后台进程到跟踪列表
+track_background_process() {
+    local pid="$1"
+    if [ -n "$pid" ]; then
+        BACKGROUND_PIDS+=("$pid")
+    fi
+}
+
+# 清理所有后台进程
+cleanup_background_processes() {
+    local pid
+    for pid in "${BACKGROUND_PIDS[@]}"; do
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+            log_debug "清理后台进程: $pid"
+            kill -TERM "$pid" 2>/dev/null
+            # 给进程一些时间优雅退出
+            sleep 1
+            # 如果还在运行，强制杀死
+            if kill -0 "$pid" 2>/dev/null; then
+                kill -KILL "$pid" 2>/dev/null
+            fi
+        fi
+    done
+    BACKGROUND_PIDS=()
+}
+
 # 清理函数
 cleanup() {
+    log_debug "开始清理资源..."
+
+    # 清理后台进程
+    cleanup_background_processes
+
+    # 清理临时目录
     if [ -n "$TEMP_DIR" ] && [ -d "$TEMP_DIR" ]; then
+        log_debug "清理临时目录: $TEMP_DIR"
         rm -rf "$TEMP_DIR"
     fi
+
+    log_debug "资源清理完成"
 }
 
 # 注意：error_exit函数已在文件开头定义
 
-# 检查命令是否存在
+# 检查命令是否存在并获取版本信息
 check_command() {
     local cmd="$1"
     local name="$2"
-    
+    local min_version="$3"
+
     if ! command -v "$cmd" &> /dev/null; then
         error_exit "$name 未安装。请先安装 $name"
+    fi
+
+    # 获取版本信息（如果提供了最小版本要求）
+    if [ -n "$min_version" ]; then
+        local version=""
+        case "$cmd" in
+            "ffmpeg"|"ffprobe")
+                version=$(ffmpeg -version 2>/dev/null | head -n1 | grep -o '[0-9]\+\.[0-9]\+' | head -n1)
+                ;;
+            "magick")
+                version=$(magick -version 2>/dev/null | head -n1 | grep -o '[0-9]\+\.[0-9]\+' | head -n1)
+                ;;
+        esac
+
+        if [ -n "$version" ]; then
+            log_debug "$name 版本: $version"
+        fi
     fi
 }
 
 # 检查依赖
 check_dependencies() {
     echo -e "${YELLOW}检查依赖...${NC}"
+
+    # 检查必需的命令
     check_command "ffmpeg" "FFmpeg"
     check_command "ffprobe" "FFprobe"
     check_command "magick" "ImageMagick"
-    check_command "bc" "bc"
+
+    # bc是可选的，如果没有会使用awk作为替代
+    if ! command -v "bc" &> /dev/null; then
+        log_warn "bc 未安装，将使用 awk 进行数学计算"
+        if ! command -v "awk" &> /dev/null; then
+            error_exit "bc 和 awk 都未安装，至少需要其中一个进行数学计算"
+        fi
+    fi
+
     echo -e "${GREEN}依赖检查完成${NC}"
 }
 
@@ -451,11 +539,26 @@ process_timepoints() {
 
 # 显示进度条（通用函数）
 show_progress() {
-    local current=$1
-    local total=$2
+    local current="$1"
+    local total="$2"
     local prefix="$3"
+
+    # 避免除零错误
+    if [ "$total" -eq 0 ]; then
+        printf "\r%s: 0%% (0/0)" "$prefix"
+        return
+    fi
+
     local progress=$((current * 100 / total))
-    printf "\r%s: %d%% (%d/%d)" "$prefix" $progress $current $total
+
+    # 检测CI环境，使用不同的显示方式
+    if [ -n "${CI:-}" ] || [ -n "${GITHUB_ACTIONS:-}" ]; then
+        # CI环境：使用换行输出
+        echo "$prefix: $progress% ($current/$total)"
+    else
+        # 本地环境：使用\r实现动态更新
+        printf "\r%s: %d%% (%d/%d)" "$prefix" "$progress" "$current" "$total"
+    fi
 }
 
 # 通用并行处理函数
@@ -492,15 +595,15 @@ run_parallel_jobs() {
         # 检查已完成的作业
         local new_pids=()
         for pid in "${pids[@]}"; do
-            if ! kill -0 $pid 2>/dev/null; then
-                wait $pid
+            if ! kill -0 "$pid" 2>/dev/null; then
+                wait "$pid"
                 active_jobs=$((active_jobs - 1))
                 completed_jobs=$((completed_jobs + 1))
 
                 # 更新进度
-                show_progress $completed_jobs ${#job_array[@]} "并行处理进度"
+                show_progress "$completed_jobs" "${#job_array[@]}" "并行处理进度"
             else
-                new_pids+=($pid)
+                new_pids+=("$pid")
             fi
         done
         pids=("${new_pids[@]}")
@@ -517,8 +620,8 @@ run_magick_command() {
     local error_message="$2"
     local error_file="$TEMP_DIR/magick_error_$$.log"
 
-    # 执行命令并捕获错误
-    eval "$command" 2>"$error_file"
+    # 安全地执行命令并捕获错误，避免使用eval
+    bash -c "$command" 2>"$error_file"
     local exit_code=$?
 
     if [ $exit_code -ne 0 ]; then

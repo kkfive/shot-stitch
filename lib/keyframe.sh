@@ -77,8 +77,10 @@ detect_keyframes() {
     ffprobe -v quiet -select_streams v:0 \
         -show_entries frame=best_effort_timestamp_time,pict_type \
         -of csv=p=0 "$video_file" > "$temp_keyframe_file" 2>/dev/null &
-    
+
     local ffprobe_pid=$!
+    # 跟踪后台进程以便清理
+    track_background_process "$ffprobe_pid"
     
     # 显示进度并监控超时
     echo -n "关键帧检测进度: 处理中"
@@ -86,23 +88,23 @@ detect_keyframes() {
     local is_timeout=false
     local last_progress=0
 
-    while kill -0 $ffprobe_pid 2>/dev/null; do
+    while kill -0 "$ffprobe_pid" 2>/dev/null; do
         sleep 2
         echo -n "."
         elapsed=$((elapsed + 2))
 
         # 检查是否超时
-        if [ $elapsed -ge $timeout_seconds ]; then
+        if [ "$elapsed" -ge "$timeout_seconds" ]; then
             is_timeout=true
             break
         fi
 
         # 显示进度百分比（基于时间，但说明这是预估）
-        if [ $elapsed -gt 0 ] && [ $((elapsed % 10)) -eq 0 ]; then
+        if [ "$elapsed" -gt 0 ] && [ $((elapsed % 10)) -eq 0 ]; then
             local progress=$((elapsed * 95 / timeout_seconds))  # 最大显示95%
-            if [ $progress -le 95 ] && [ $progress -gt $last_progress ]; then
-                printf " %d%%" $progress
-                last_progress=$progress
+            if [ "$progress" -le 95 ] && [ "$progress" -gt "$last_progress" ]; then
+                printf " %d%%" "$progress"
+                last_progress="$progress"
             fi
         fi
     done
@@ -110,28 +112,28 @@ detect_keyframes() {
     # 如果不是超时，说明ffprobe正常完成
     if [ "$is_timeout" = false ]; then
         # 显示实际完成时间
-        printf " (实际用时: %d秒)" $elapsed
+        printf " (实际用时: %d秒)" "$elapsed"
     fi
 
     # 检查是否超时
     if [ "$is_timeout" = true ]; then
         echo ""
         echo -e "${YELLOW}关键帧检测超时（${timeout_seconds}秒），终止检测进程${NC}"
-        kill $ffprobe_pid 2>/dev/null
-        wait $ffprobe_pid 2>/dev/null
+        kill "$ffprobe_pid" 2>/dev/null
+        wait "$ffprobe_pid" 2>/dev/null
         echo -e "${YELLOW}将回退到时间间隔模式${NC}"
         rm -f "$temp_keyframe_file"
         return 1
     fi
 
     # 等待ffprobe进程完成
-    wait $ffprobe_pid
+    wait "$ffprobe_pid"
     local ffprobe_exit_code=$?
 
     echo " 100% 完成"
     
     # 检查ffprobe是否成功执行
-    if [ $ffprobe_exit_code -ne 0 ]; then
+    if [ "$ffprobe_exit_code" -ne 0 ]; then
         echo -e "${YELLOW}警告: 关键帧检测过程出现问题，将使用时间间隔模式${NC}"
         rm -f "$temp_keyframe_file"
         return 1
@@ -153,7 +155,7 @@ detect_keyframes() {
             local time_int=$(echo "$time_point" | cut -d. -f1)
             if [[ "$time_int" =~ ^[0-9]+$ ]]; then
                 # 检查最小间隔
-                if [ $((time_int - last_keyframe_time)) -ge $min_interval ]; then
+                if [ $((time_int - last_keyframe_time)) -ge "$min_interval" ]; then
                     keyframe_times+=("$time_int")
                     last_keyframe_time=$time_int
                     filtered_i_frames=$((filtered_i_frames + 1))
@@ -170,9 +172,9 @@ detect_keyframes() {
     # 检查关键帧数量
     local keyframe_count=${#keyframe_times[@]}
 
-    if [ $keyframe_count -eq 0 ]; then
+    if [ "$keyframe_count" -eq 0 ]; then
         echo -e "${YELLOW}警告: 未检测到满足最小间隔(${min_interval}s)的关键帧${NC}"
-        if [ $total_i_frames -gt 0 ]; then
+        if [ "$total_i_frames" -gt 0 ]; then
             echo -e "${YELLOW}建议: 尝试减少最小间隔参数 --keyframe-min 或使用时间模式${NC}"
         else
             echo -e "${YELLOW}原因: 视频可能没有I帧或格式不支持关键帧检测${NC}"
@@ -182,7 +184,7 @@ detect_keyframes() {
 
     # 检查关键帧数量是否太少
     local min_required_frames=5  # 至少需要5个关键帧才有意义
-    if [ $keyframe_count -lt $min_required_frames ]; then
+    if [ "$keyframe_count" -lt "$min_required_frames" ]; then
         echo -e "${YELLOW}警告: 关键帧数量过少(${keyframe_count}个)，建议使用时间间隔模式${NC}"
         echo -e "${YELLOW}建议: 减少最小间隔参数 --keyframe-min 或使用 --mode time${NC}"
         return 1
@@ -233,7 +235,7 @@ detect_keyframes_optimized() {
     local elapsed=0
     local dot_count=0
 
-    while kill -0 $ffprobe_pid 2>/dev/null; do
+    while kill -0 "$ffprobe_pid" 2>/dev/null; do
         sleep 1
         echo -n "."
         elapsed=$((elapsed + 1))
@@ -753,8 +755,8 @@ extract_frames_keyframe_parallel() {
         # 检查已完成的作业
         local new_pids=()
         for pid in "${pids[@]}"; do
-            if ! kill -0 $pid 2>/dev/null; then
-                wait $pid
+            if ! kill -0 "$pid" 2>/dev/null; then
+                wait "$pid"
                 active_jobs=$((active_jobs - 1))
                 completed_jobs=$((completed_jobs + 1))
                 

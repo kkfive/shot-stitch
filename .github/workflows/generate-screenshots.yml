@@ -232,11 +232,13 @@ jobs:
           rm -f "video_input/$DOCKER_SAFE_FILENAME"
         fi
 
-        # 定义查找生成文件的命令（避免重复）
-        FIND_GENERATED_FILES="find video_input/ -type f \( -name \"*.webp\" -o -name \"*.jpg\" -o -name \"*.png\" -o -name \"*.html\" \) ! -name \"$FINAL_FILENAME\""
+        # 定义查找生成文件的函数（避免eval）
+        find_generated_files() {
+          find video_input/ -type f \( -name "*.webp" -o -name "*.jpg" -o -name "*.png" -o -name "*.html" \) ! -name "$FINAL_FILENAME"
+        }
 
         # 检查生成的文件
-        SCREENSHOT_COUNT=$(eval "$FIND_GENERATED_FILES" | wc -l)
+        SCREENSHOT_COUNT=$(find_generated_files | wc -l)
 
         if [ "$SCREENSHOT_COUNT" -eq 0 ]; then
           echo "❌ 没有生成任何截图文件"
@@ -244,11 +246,10 @@ jobs:
         fi
 
         echo "✅ 截图生成完成，共生成 $SCREENSHOT_COUNT 个文件"
-        echo "FIND_GENERATED_FILES=$FIND_GENERATED_FILES" >> $GITHUB_ENV
 
         # 列出生成的文件
         echo "📊 生成的文件:"
-        eval "$FIND_GENERATED_FILES" | while read file; do
+        find_generated_files | while read file; do
           echo "  - $(basename "$file") ($(du -h "$file" | cut -f1))"
         done
     
@@ -277,7 +278,7 @@ jobs:
         echo "**生成时间**: \`$(date '+%Y-%m-%d %H:%M:%S')\`" >> release_notes.md
         echo "" >> release_notes.md
         echo "## 包含文件" >> release_notes.md
-        eval "$FIND_GENERATED_FILES" | while read file; do
+        find_generated_files | while read file; do
           echo "- \`$(basename "$file")\` ($(du -h "$file" | cut -f1))" >> release_notes.md
         done
         echo "- \`${VIDEO_FILENAME}_all_files.zip\` (包含所有文件的压缩包)" >> release_notes.md
@@ -301,7 +302,7 @@ jobs:
         
         # 上传所有截图文件
         echo "📤 上传截图文件..."
-        eval "$FIND_GENERATED_FILES" | while read file; do
+        find_generated_files | while read file; do
           filename=$(basename "$file")
           echo "📤 上传: $filename"
 
@@ -315,7 +316,7 @@ jobs:
         mkdir -p temp_upload
 
         # 复制所有截图文件到临时目录
-        eval "$FIND_GENERATED_FILES" | while read file; do
+        find_generated_files | while read file; do
           cp "$file" temp_upload/
         done
 
@@ -348,7 +349,7 @@ jobs:
         echo "3. 直接下载需要的文件（无需解压）"
         echo ""
         echo "📊 可下载的文件:"
-        eval "$FIND_GENERATED_FILES" | while read file; do
+        find_generated_files | while read file; do
           echo "  - $(basename "$file") ($(du -h "$file" | cut -f1))"
         done
         echo "  - ${VIDEO_FILENAME}_all_files.zip (包含所有文件的压缩包)"

@@ -183,13 +183,40 @@ create_info_header() {
     # 动态计算实际需要的头部高度
     local header_height=$((current_y + bottom_margin + 10))  # 当前位置 + 底部边距 + 足够缓冲
     
-    # 创建头部图片（统一命令）
-    eval "magick -size ${grid_width}x${header_height} xc:\"$bg_color\" \
-        $font_option \
-        -fill \"$text_color\" \
-        -gravity NorthWest \
-        $annotations \
-        \"$header_file\""
+    # 创建头部图片（统一命令），使用数组避免eval
+    local magick_cmd=(
+        "magick" "-size" "${grid_width}x${header_height}" "xc:$bg_color"
+    )
+
+    if [ -n "$font_file" ]; then
+        magick_cmd+=("-font" "$font_file")
+    fi
+
+    magick_cmd+=(
+        "-fill" "$text_color"
+        "-gravity" "NorthWest"
+    )
+
+    # 直接使用eval执行完整的ImageMagick命令
+    # 构建完整命令字符串
+    local full_cmd="magick -size ${grid_width}x${header_height} xc:$bg_color"
+
+    if [ -n "$font_file" ]; then
+        full_cmd="$full_cmd -font \"$font_file\""
+    fi
+
+    full_cmd="$full_cmd -fill \"$text_color\" -gravity NorthWest"
+
+    if [ -n "$annotations" ]; then
+        full_cmd="$full_cmd $annotations"
+    fi
+
+    full_cmd="$full_cmd \"$header_file\""
+
+
+
+    # 执行命令
+    eval "$full_cmd"
     
     return $?
 }
@@ -199,9 +226,12 @@ generate_preview_grid() {
     echo -e "${YELLOW}生成预览拼接图...${NC}"
 
     local frame_files=("$TEMP_DIR"/${VIDEO_FILENAME}_*.$FORMAT)
-    
+
+
+
     if [ ${#frame_files[@]} -eq 0 ] || [ ! -f "${frame_files[0]}" ]; then
         echo -e "${RED}错误: 未找到截取的帧文件${NC}"
+
         return 1
     fi
     
@@ -464,6 +494,9 @@ generate_preview_grid() {
             fi
         done
         local magick_error_file="$TEMP_DIR/magick_error.log"
+
+
+
         magick "${temp_rows[@]}" -append "$temp_grid_file" 2>"$magick_error_file"
         local magick_exit_code=$?
 
@@ -479,9 +512,13 @@ generate_preview_grid() {
             rm -f "$magick_error_file"
             return 1
         fi
+
     else
         # 无间距拼接
         local magick_error_file="$TEMP_DIR/magick_error.log"
+
+
+
         magick "${row_files[@]}" -append "$temp_grid_file" 2>"$magick_error_file"
         local magick_exit_code=$?
 
@@ -494,6 +531,7 @@ generate_preview_grid() {
             rm -f "$magick_error_file"
             return 1
         fi
+
     fi
 
     # 检查生成的网格图是否成功

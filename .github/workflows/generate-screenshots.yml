@@ -46,8 +46,25 @@ jobs:
           exit 1
         fi
         echo "✅ URL 验证通过"
+
+        # 验证自定义文件名（如果提供）
+        if [ -n "$CUSTOM_FILENAME" ]; then
+          # 检查是否包含不安全的字符
+          if [[ "$CUSTOM_FILENAME" =~ [\<\>\:\"\|\?\*\/\\] ]]; then
+            echo "❌ 自定义文件名包含不安全的字符: $CUSTOM_FILENAME"
+            echo "请避免使用以下字符: < > : \" | ? * / \\"
+            exit 1
+          fi
+          # 检查长度
+          if [ ${#CUSTOM_FILENAME} -gt 100 ]; then
+            echo "❌ 自定义文件名过长（超过100字符）: $CUSTOM_FILENAME"
+            exit 1
+          fi
+          echo "✅ 自定义文件名验证通过: $CUSTOM_FILENAME"
+        fi
       env:
         VIDEO_URL: ${{ inputs.video_url }}
+        CUSTOM_FILENAME: ${{ inputs.custom_filename }}
     
     - name: 设置 Hosts 映射
       run: |
@@ -68,28 +85,42 @@ jobs:
         echo "⬇️ 正在获取视频资源..."
         echo "🔗 URL: $VIDEO_URL"
 
-        # 确定使用的文件名
+        # 从 URL 中提取原始文件名
+        URL_FILENAME=$(echo "$VIDEO_URL" | sed 's/.*\///' | sed 's/\?.*$//')
+        if [ -z "$URL_FILENAME" ] || [[ ! "$URL_FILENAME" =~ \. ]]; then
+          URL_FILENAME="video.mp4"
+        fi
+
+        echo "📝 URL中的文件名: $URL_FILENAME"
+
+        # 提取扩展名（统一处理）
+        if [[ "$URL_FILENAME" =~ \. ]]; then
+          EXTENSION="${URL_FILENAME##*.}"
+        else
+          EXTENSION="mp4"
+        fi
+
+        # 确定最终使用的文件名
         if [ -n "${{ inputs.custom_filename }}" ]; then
-          # 使用自定义文件名，从原始URL提取扩展名
-          URL_FILENAME=$(echo "$VIDEO_URL" | sed 's/.*\///' | sed 's/\?.*$//')
-          if [[ "$URL_FILENAME" =~ \. ]]; then
-            EXTENSION="${URL_FILENAME##*.}"
-          else
-            EXTENSION="mp4"
-          fi
+          # 1. 用户传入重命名参数，直接使用用户传入的名称
           FINAL_FILENAME="${{ inputs.custom_filename }}.${EXTENSION}"
           echo "📝 使用自定义文件名: $FINAL_FILENAME"
-          echo "📝 原始URL文件名: $URL_FILENAME"
         else
-          # 从 URL 中提取原始文件名
-          FINAL_FILENAME=$(echo "$VIDEO_URL" | sed 's/.*\///' | sed 's/\?.*$//')
-          if [ -z "$FINAL_FILENAME" ] || [[ ! "$FINAL_FILENAME" =~ \. ]]; then
-            FINAL_FILENAME="video.mp4"
+          # 2. 用户未传入重命名参数，检测是否需要解码
+          if [[ "$URL_FILENAME" =~ %[0-9A-Fa-f]{2} ]]; then
+            # 检测到URL编码，进行解码
+            DECODED_FILENAME=$(printf '%b' "${URL_FILENAME//%/\\x}")
+            FINAL_FILENAME="$DECODED_FILENAME"
+            echo "📝 检测到URL编码，解码后: $FINAL_FILENAME"
+          else
+            # 无需解码
+            FINAL_FILENAME="$URL_FILENAME"
+            echo "📝 使用原始文件名: $FINAL_FILENAME"
           fi
-          echo "📝 自动提取的文件名: $FINAL_FILENAME"
         fi
 
         echo "FINAL_FILENAME=$FINAL_FILENAME" >> $GITHUB_ENV
+        echo "URL_FILENAME=$URL_FILENAME" >> $GITHUB_ENV
 
         # 首先获取文件信息
         echo "📊 获取文件信息..."
@@ -101,19 +132,20 @@ jobs:
           echo "⚠️ 无法获取文件大小信息"
         fi
 
-        # 使用 curl 下载到指定文件名
+        # 使用 curl 下载到临时文件名
+        TEMP_FILENAME="temp_download_$(date +%s).tmp"
         echo "⬇️ 开始下载..."
         if curl -L --fail --progress-bar \
                --connect-timeout 30 --max-time 3600 \
                --user-agent "Mozilla/5.0 (compatible; VideoProcessor/1.0)" \
-               --output "video_input/$FINAL_FILENAME" \
+               --output "video_input/$TEMP_FILENAME" \
                --write-out "✅ 下载完成 - 实际大小: %{size_download} 字节 - 总用时: %{time_total}s - 平均速度: %{speed_download} B/s\n" \
                "$VIDEO_URL"; then
 
           # 验证文件并显示友好的大小
-          if [ -f "video_input/$FINAL_FILENAME" ] && [ -s "video_input/$FINAL_FILENAME" ]; then
-            FILE_SIZE=$(du -h "video_input/$FINAL_FILENAME" | cut -f1)
-            FILE_SIZE_BYTES=$(stat -c%s "video_input/$FINAL_FILENAME" 2>/dev/null || stat -f%z "video_input/$FINAL_FILENAME" 2>/dev/null)
+          if [ -f "video_input/$TEMP_FILENAME" ] && [ -s "video_input/$TEMP_FILENAME" ]; then
+            FILE_SIZE=$(du -h "video_input/$TEMP_FILENAME" | cut -f1)
+            FILE_SIZE_BYTES=$(stat -c%s "video_input/$TEMP_FILENAME" 2>/dev/null || stat -f%z "video_input/$TEMP_FILENAME" 2>/dev/null)
             echo "📊 最终文件大小: ${FILE_SIZE} (${FILE_SIZE_BYTES} 字节)"
 
             # 验证文件完整性（如果有预期大小）
@@ -123,6 +155,17 @@ jobs:
               else
                 echo "⚠️ 文件大小不匹配 (预期: $CONTENT_LENGTH, 实际: $FILE_SIZE_BYTES)"
               fi
+            fi
+
+            # 重命名临时文件到最终文件名
+            echo "🔄 重命名文件: $TEMP_FILENAME → $FINAL_FILENAME"
+            mv "video_input/$TEMP_FILENAME" "video_input/$FINAL_FILENAME"
+
+            if [ -f "video_input/$FINAL_FILENAME" ]; then
+              echo "✅ 文件重命名成功: $FINAL_FILENAME"
+            else
+              echo "❌ 文件重命名失败"
+              exit 1
             fi
           else
             echo "❌ 下载的文件无效或为空"
@@ -141,22 +184,61 @@ jobs:
 
         # 从最终文件名中提取基础名称（不含扩展名）
         VIDEO_FILENAME=$(echo "$FINAL_FILENAME" | sed 's/\.[^.]*$//')
-        VIDEO_FILENAME=$(echo "$VIDEO_FILENAME" | sed 's/[^a-zA-Z0-9_-]/_/g' | sed 's/__*/_/g' | sed 's/^_\|_$//g')
+        # 注意：保持中文字符，只清理在文件系统中有问题的字符
+        VIDEO_FILENAME=$(echo "$VIDEO_FILENAME" | sed 's/[<>:"|?*\/\\]/_/g' | sed 's/__*/_/g' | sed 's/^_\|_$//g')
 
-        echo "📝 视频文件名: $VIDEO_FILENAME"
+        # 为Docker容器创建ASCII安全的工作文件名（用于内部处理）
+        # 但保持原始文件名用于最终输出
+        DOCKER_SAFE_FILENAME=$(echo "$FINAL_FILENAME" | sed 's/[^a-zA-Z0-9._-]/_/g' | sed 's/__*/_/g' | sed 's/^_\|_$//g')
+        if [ "$DOCKER_SAFE_FILENAME" != "$FINAL_FILENAME" ]; then
+          echo "📝 Docker安全文件名: $DOCKER_SAFE_FILENAME"
+          # 创建ASCII安全的符号链接
+          ln -sf "$FINAL_FILENAME" "video_input/$DOCKER_SAFE_FILENAME"
+        else
+          DOCKER_SAFE_FILENAME="$FINAL_FILENAME"
+        fi
+
+        echo "📝 处理文件: $FINAL_FILENAME"
+        echo "📝 基础文件名: $VIDEO_FILENAME"
         echo "VIDEO_FILENAME=$VIDEO_FILENAME" >> $GITHUB_ENV
 
-        # 运行 shot-stitch Docker 容器，使用最终文件名
+        # 运行 shot-stitch Docker 容器，使用ASCII安全的文件名
+        # 设置UTF-8环境变量以支持中文文件名
         docker run --rm \
+          -e LANG=C.UTF-8 \
+          -e LC_ALL=C.UTF-8 \
           -v $(pwd)/video_input:/data \
           dreamytzk/shot-stitch:latest \
-          "/data/$FINAL_FILENAME" \
+          "/data/$DOCKER_SAFE_FILENAME" \
           --preset ${{ inputs.preset }} \
           --html \
           --force
 
+        # 如果使用了ASCII安全文件名，需要重命名生成的文件
+        if [ "$DOCKER_SAFE_FILENAME" != "$FINAL_FILENAME" ]; then
+          echo "🔄 重命名生成的文件回中文文件名..."
+          DOCKER_SAFE_BASE=$(echo "$DOCKER_SAFE_FILENAME" | sed 's/\.[^.]*$//')
+
+          # 重命名所有生成的文件
+          for file in video_input/${DOCKER_SAFE_BASE}*; do
+            if [ -f "$file" ] && [ "$(basename "$file")" != "$DOCKER_SAFE_FILENAME" ]; then
+              new_name=$(echo "$(basename "$file")" | sed "s/^${DOCKER_SAFE_BASE}/${VIDEO_FILENAME}/")
+              mv "$file" "video_input/$new_name"
+              echo "  重命名: $(basename "$file") → $new_name"
+            fi
+          done
+
+          # 删除ASCII安全的符号链接
+          rm -f "video_input/$DOCKER_SAFE_FILENAME"
+        fi
+
+        # 定义查找生成文件的函数（避免eval）
+        find_generated_files() {
+          find video_input/ -type f \( -name "*.webp" -o -name "*.jpg" -o -name "*.png" -o -name "*.html" \) ! -name "$FINAL_FILENAME"
+        }
+
         # 检查生成的文件
-        SCREENSHOT_COUNT=$(find video_input/ -type f \( -name "*.webp" -o -name "*.jpg" -o -name "*.png" -o -name "*.html" \) ! -name "$FINAL_FILENAME" | wc -l)
+        SCREENSHOT_COUNT=$(find_generated_files | wc -l)
 
         if [ "$SCREENSHOT_COUNT" -eq 0 ]; then
           echo "❌ 没有生成任何截图文件"
@@ -167,7 +249,7 @@ jobs:
 
         # 列出生成的文件
         echo "📊 生成的文件:"
-        find video_input/ -type f \( -name "*.webp" -o -name "*.jpg" -o -name "*.png" -o -name "*.html" \) ! -name "$FINAL_FILENAME" | while read file; do
+        find_generated_files | while read file; do
           echo "  - $(basename "$file") ($(du -h "$file" | cut -f1))"
         done
     
@@ -187,12 +269,16 @@ jobs:
         echo "# 视频截图文件" > release_notes.md
         echo "" >> release_notes.md
         echo "**视频文件名**: \`$VIDEO_FILENAME\`" >> release_notes.md
+        # 如果使用了自定义文件名或进行了URL解码，显示原始URL文件名
+        if [ -n "${{ inputs.custom_filename }}" ] || [[ "$URL_FILENAME" =~ %[0-9A-Fa-f]{2} ]]; then
+          echo "**原始URL文件名**: \`$URL_FILENAME\`" >> release_notes.md
+        fi
         echo "**预设模式**: \`${{ inputs.preset }}\`" >> release_notes.md
         echo "**目标仓库**: \`$TARGET_REPO\`" >> release_notes.md
         echo "**生成时间**: \`$(date '+%Y-%m-%d %H:%M:%S')\`" >> release_notes.md
         echo "" >> release_notes.md
         echo "## 包含文件" >> release_notes.md
-        find video_input/ -type f \( -name "*.webp" -o -name "*.jpg" -o -name "*.png" -o -name "*.html" \) ! -name "$FINAL_FILENAME" | while read file; do
+        find_generated_files | while read file; do
           echo "- \`$(basename "$file")\` ($(du -h "$file" | cut -f1))" >> release_notes.md
         done
         echo "- \`${VIDEO_FILENAME}_all_files.zip\` (包含所有文件的压缩包)" >> release_notes.md
@@ -216,10 +302,10 @@ jobs:
         
         # 上传所有截图文件
         echo "📤 上传截图文件..."
-        find video_input/ -type f \( -name "*.webp" -o -name "*.jpg" -o -name "*.png" -o -name "*.html" \) ! -name "$FINAL_FILENAME" | while read file; do
+        find_generated_files | while read file; do
           filename=$(basename "$file")
           echo "📤 上传: $filename"
-          
+
           gh release upload "$RELEASE_TAG" "$file" \
             --repo "$TARGET_REPO" \
             --clobber
@@ -230,7 +316,9 @@ jobs:
         mkdir -p temp_upload
 
         # 复制所有截图文件到临时目录
-        find video_input/ -type f \( -name "*.webp" -o -name "*.jpg" -o -name "*.png" -o -name "*.html" \) ! -name "$FINAL_FILENAME" -exec cp {} temp_upload/ \;
+        find_generated_files | while read file; do
+          cp "$file" temp_upload/
+        done
 
         cd temp_upload
         zip_filename="${VIDEO_FILENAME}_all_files.zip"
@@ -261,7 +349,7 @@ jobs:
         echo "3. 直接下载需要的文件（无需解压）"
         echo ""
         echo "📊 可下载的文件:"
-        find video_input/ -type f \( -name "*.webp" -o -name "*.jpg" -o -name "*.png" -o -name "*.html" \) ! -name "$FINAL_FILENAME" | while read file; do
+        find_generated_files | while read file; do
           echo "  - $(basename "$file") ($(du -h "$file" | cut -f1))"
         done
         echo "  - ${VIDEO_FILENAME}_all_files.zip (包含所有文件的压缩包)"

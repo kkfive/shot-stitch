@@ -12,21 +12,21 @@ extract_single_frame_parallel() {
     local video_filename="$7"
     local format="$8"
 
-    local temp_frame_file="$temp_dir/${video_filename}_temp_$(printf "%04d" $frame_index).$format"
-    local output_file="$temp_dir/${video_filename}_$(printf "%04d" $frame_index).$format"
-    
+    local temp_frame_file="$temp_dir/${video_filename}_temp_$(printf "%04d" "$frame_index").$format"
+    local output_file="$temp_dir/${video_filename}_$(printf "%04d" "$frame_index").$format"
+
     # 计算实际的视频时间点（加上跳过的开头时间）
     local actual_time=$((frame_time + ${EFFECTIVE_START_TIME:-0}))
 
     # 截取原始帧（使用实际时间点）
-    ffmpeg -ss $actual_time -i "$video_file" -vframes 1 $scale_filter -q:v $quality "$temp_frame_file" -y &> /dev/null
+    ffmpeg -ss "$actual_time" -i "$video_file" -vframes 1 $scale_filter -q:v "$quality" "$temp_frame_file" -y &> /dev/null
 
     if [ -f "$temp_frame_file" ]; then
         # 格式化时间戳（显示实际时间）
         local hours=$((actual_time / 3600))
         local minutes=$(((actual_time % 3600) / 60))
         local seconds=$((actual_time % 60))
-        local timestamp=$(printf "%02d:%02d:%02d" $hours $minutes $seconds)
+        local timestamp=$(printf "%02d:%02d:%02d" "$hours" "$minutes" "$seconds")
         
         # 在帧上添加时间戳
         add_timestamp_to_frame "$temp_frame_file" "$output_file" "$timestamp"
@@ -88,7 +88,7 @@ extract_frames_time_parallel() {
     
     while [ $completed_jobs -lt ${#job_queue[@]} ] || [ $active_jobs -gt 0 ]; do
         # 启动新作业（如果有空闲槽位和待处理作业）
-        while [ $active_jobs -lt $PARALLEL_JOBS ] && [ $job_index -lt ${#job_queue[@]} ]; do
+        while [ "$active_jobs" -lt "$PARALLEL_JOBS" ] && [ "$job_index" -lt "${#job_queue[@]}" ]; do
             local job="${job_queue[$job_index]}"
             local frame_time="${job%:*}"
             local frame_idx="${job#*:}"
@@ -98,7 +98,7 @@ extract_frames_time_parallel() {
                 extract_single_frame_parallel "$frame_time" "$frame_idx" "$TEMP_DIR" "$VIDEO_FILE" "$scale_filter" "$QUALITY" "$VIDEO_FILENAME" "$FORMAT"
             ) >> "$results_file" &
             
-            pids+=($!)
+            pids+=("$!")
             active_jobs=$((active_jobs + 1))
             job_index=$((job_index + 1))
         done
@@ -106,16 +106,16 @@ extract_frames_time_parallel() {
         # 检查已完成的作业
         local new_pids=()
         for pid in "${pids[@]}"; do
-            if ! kill -0 $pid 2>/dev/null; then
+            if ! kill -0 "$pid" 2>/dev/null; then
                 # 作业已完成
-                wait $pid
+                wait "$pid"
                 active_jobs=$((active_jobs - 1))
                 completed_jobs=$((completed_jobs + 1))
-                
+
                 # 更新进度
-                show_progress $completed_jobs ${#job_queue[@]} "帧截取进度"
+                show_progress "$completed_jobs" "${#job_queue[@]}" "帧截取进度"
             else
-                new_pids+=($pid)
+                new_pids+=("$pid")
             fi
         done
         pids=("${new_pids[@]}")
@@ -124,7 +124,7 @@ extract_frames_time_parallel() {
         sleep 0.1
     done
     
-    printf "\r帧截取进度: 100%% (%d/%d)\n" $completed_jobs $completed_jobs
+    printf "\r帧截取进度: 100%% (%d/%d)\n" "$completed_jobs" "$completed_jobs"
     
     # 统计成功和失败的帧
     local success_count=$(grep -c "SUCCESS:" "$results_file" 2>/dev/null || echo 0)
@@ -193,7 +193,7 @@ extract_frames_scene_parallel() {
     
     while [ $completed_jobs -lt ${#job_queue[@]} ] || [ $active_jobs -gt 0 ]; do
         # 启动新作业
-        while [ $active_jobs -lt $PARALLEL_JOBS ] && [ $job_index -lt ${#job_queue[@]} ]; do
+        while [ "$active_jobs" -lt "$PARALLEL_JOBS" ] && [ "$job_index" -lt "${#job_queue[@]}" ]; do
             local job="${job_queue[$job_index]}"
             local frame_time="${job%:*}"
             local frame_idx="${job#*:}"
@@ -203,7 +203,7 @@ extract_frames_scene_parallel() {
                 extract_single_frame_parallel "$frame_time" "$frame_idx" "$TEMP_DIR" "$VIDEO_FILE" "$scale_filter" "$QUALITY" "$VIDEO_FILENAME" "$FORMAT"
             ) >> "$results_file" &
             
-            pids+=($!)
+            pids+=("$!")
             active_jobs=$((active_jobs + 1))
             job_index=$((job_index + 1))
         done
@@ -211,15 +211,15 @@ extract_frames_scene_parallel() {
         # 检查已完成的作业
         local new_pids=()
         for pid in "${pids[@]}"; do
-            if ! kill -0 $pid 2>/dev/null; then
-                wait $pid
+            if ! kill -0 "$pid" 2>/dev/null; then
+                wait "$pid"
                 active_jobs=$((active_jobs - 1))
                 completed_jobs=$((completed_jobs + 1))
-                
+
                 # 更新进度
-                show_progress $completed_jobs ${#job_queue[@]} "帧截取进度"
+                show_progress "$completed_jobs" "${#job_queue[@]}" "帧截取进度"
             else
-                new_pids+=($pid)
+                new_pids+=("$pid")
             fi
         done
         pids=("${new_pids[@]}")
@@ -227,7 +227,7 @@ extract_frames_scene_parallel() {
         sleep 0.1
     done
     
-    printf "\r帧截取进度: 100%% (%d/%d)\n" $completed_jobs $completed_jobs
+    printf "\r帧截取进度: 100%% (%d/%d)\n" "$completed_jobs" "$completed_jobs"
     
     # 统计结果
     local success_count=$(grep -c "SUCCESS:" "$results_file" 2>/dev/null || echo 0)

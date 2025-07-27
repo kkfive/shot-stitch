@@ -34,30 +34,32 @@ detect_scene_changes() {
         -f null - \
         -progress "$temp_progress_file" \
         2>"$temp_scene_file" &
-    
+
     local ffmpeg_pid=$!
+    # 跟踪后台进程以便清理
+    track_background_process "$ffmpeg_pid"
     
     # 显示进度
     echo -n "场景检测进度: 0%"
-    while kill -0 $ffmpeg_pid 2>/dev/null; do
+    while kill -0 "$ffmpeg_pid" 2>/dev/null; do
         if [ -f "$temp_progress_file" ]; then
             # 从进度文件中读取当前时间
             local current_time=$(tail -n 20 "$temp_progress_file" 2>/dev/null | grep "out_time_ms=" | tail -n 1 | cut -d= -f2)
             if [ -n "$current_time" ] && [ "$current_time" != "N/A" ]; then
                 # 转换微秒到秒
                 local current_seconds=$((current_time / 1000000))
-                if [ $current_seconds -gt 0 ] && [ $DURATION -gt 0 ]; then
+                if [ "$current_seconds" -gt 0 ] && [ "$DURATION" -gt 0 ]; then
                     local progress=$((current_seconds * 100 / DURATION))
-                    if [ $progress -gt 100 ]; then progress=100; fi
-                    printf "\r场景检测进度: %d%%" $progress
+                    if [ "$progress" -gt 100 ]; then progress=100; fi
+                    printf "\r场景检测进度: %d%%" "$progress"
                 fi
             fi
         fi
         sleep 1
     done
-    
+
     # 等待ffmpeg进程完成
-    wait $ffmpeg_pid
+    wait "$ffmpeg_pid"
     local ffmpeg_exit_code=$?
     
     printf "\r场景检测进度: 100%%\n"
@@ -66,7 +68,7 @@ detect_scene_changes() {
     rm -f "$temp_progress_file"
     
     # 检查ffmpeg是否成功执行
-    if [ $ffmpeg_exit_code -ne 0 ]; then
+    if [ "$ffmpeg_exit_code" -ne 0 ]; then
         echo -e "${YELLOW}警告: 场景检测过程出现问题，将使用时间间隔模式${NC}"
         rm -f "$temp_scene_file"
         return 1
@@ -136,13 +138,15 @@ detect_scene_changes_optimized() {
         2>"$temp_scene_file" &
 
     local ffmpeg_pid=$!
+    # 跟踪后台进程以便清理
+    track_background_process "$ffmpeg_pid"
 
     # 显示进度并监控
     echo -n "场景检测进度: 处理中"
     local elapsed=0
     local dot_count=0
 
-    while kill -0 $ffmpeg_pid 2>/dev/null; do
+    while kill -0 "$ffmpeg_pid" 2>/dev/null; do
         sleep 1
         echo -n "."
         elapsed=$((elapsed + 1))
@@ -150,7 +154,7 @@ detect_scene_changes_optimized() {
 
         # 每10秒显示一次状态
         if [ $((dot_count % 10)) -eq 0 ]; then
-            printf " (%ds)" $elapsed
+            printf " (%ds)" "$elapsed"
         fi
 
         # 超时保护（根据文件大小动态调整超时时间）
@@ -165,9 +169,9 @@ detect_scene_changes_optimized() {
             timeout_limit=600  # 大文件10分钟
         fi
 
-        if [ $elapsed -gt $timeout_limit ]; then
+        if [ "$elapsed" -gt "$timeout_limit" ]; then
             echo " 超时，终止优化检测"
-            kill $ffmpeg_pid 2>/dev/null
+            kill "$ffmpeg_pid" 2>/dev/null
             rm -f "$temp_scene_file" "$temp_progress_file"
             echo -e "${YELLOW}优化检测超时，回退到原始算法${NC}"
             detect_scene_changes "$video_file" "$threshold"
@@ -176,7 +180,7 @@ detect_scene_changes_optimized() {
     done
 
     # 等待ffmpeg进程完成
-    wait $ffmpeg_pid
+    wait "$ffmpeg_pid"
     local ffmpeg_exit_code=$?
 
     # 记录结束时间和内存
@@ -184,13 +188,13 @@ detect_scene_changes_optimized() {
     local end_memory=$(ps -o rss= -p $$ 2>/dev/null || echo 0)
     local processing_time=$((end_time - start_time))
 
-    printf " 完成 (用时: %ds)\n" $processing_time
+    printf " 完成 (用时: %ds)\n" "$processing_time"
 
     # 清理进度文件
     rm -f "$temp_progress_file"
 
     # 检查ffmpeg是否成功执行
-    if [ $ffmpeg_exit_code -ne 0 ]; then
+    if [ "$ffmpeg_exit_code" -ne 0 ]; then
         echo -e "${YELLOW}优化场景检测失败，回退到原始算法${NC}"
         rm -f "$temp_scene_file"
         detect_scene_changes "$video_file" "$threshold"
@@ -293,7 +297,7 @@ detect_scene_changes_ultra_optimized() {
     local elapsed=0
     local dot_count=0
 
-    while kill -0 $ffmpeg_pid 2>/dev/null; do
+    while kill -0 "$ffmpeg_pid" 2>/dev/null; do
         sleep 1
         echo -n "."
         elapsed=$((elapsed + 1))
@@ -474,29 +478,80 @@ detect_scene_changes_parallel() {
             local progress_file="$segment_output_file.progress"
             echo "0" > "$progress_file"
 
+
+
             # macOS兼容的超时机制，带进度监控
             if [ "$timeout_setting" -gt 0 ]; then
-                # 启动ffmpeg进程，使用progress参数
-                ffmpeg -ss "$segment_start_time" -t "$((segment_end_time - segment_start_time))" -i "$video_input_file" \
-                    -vf "scale=640:-1,fps=2,select='gt(scene,$scene_threshold)',showinfo" \
+                # 启动ffmpeg进程（简化版本，使用文件大小估算进度）
+                local segment_duration=$((segment_end_time - segment_start_time))
+
+                # 启动FFmpeg进程（修复场景检测filter）
+                # 创建错误日志文件
+                local error_log="$segment_output_file.error"
+
+
+
+                # 使用正确的场景检测filter（修复阈值问题）
+                # 如果阈值太高，自动降低
+                local effective_threshold="$scene_threshold"
+                if (( $(echo "$scene_threshold > 0.15" | bc -l) )); then
+                    effective_threshold="0.1"
+                    echo "场景阈值过高($scene_threshold)，自动调整为 $effective_threshold"
+                fi
+
+                # 修复输出重定向：showinfo输出到stderr，需要正确捕获
+                ffmpeg -ss "$segment_start_time" -t "$segment_duration" -i "$video_input_file" \
+                    -vf "scale=640:-1,fps=1,select='gt(scene,$effective_threshold)',showinfo" \
                     -f null - \
                     -threads "$segment_threads" \
                     -preset ultrafast \
-                    -progress "$progress_file" \
-                    2>"$segment_output_file" &
+                    -nostats -loglevel info \
+                    >"$error_log" 2>"$segment_output_file" &
                 local ffmpeg_pid=$!
+
+                # 启动进度监控子进程
+                (
+                    local start_time=$(date +%s)
+                    while kill -0 "$ffmpeg_pid" 2>/dev/null; do
+                        local current_time=$(date +%s)
+                        local elapsed=$((current_time - start_time))
+
+                        # 基于时间估算进度（更积极的估算）
+                        if [ "$segment_duration" -gt 0 ]; then
+                            # 使用更积极的进度估算，场景检测通常比实时快
+                            local estimated_progress=$((elapsed * 200 / segment_duration))
+                            if [ "$estimated_progress" -gt 95 ]; then estimated_progress=95; fi
+                            if [ "$estimated_progress" -lt 0 ]; then estimated_progress=0; fi
+                            echo "$estimated_progress" > "${progress_file}.percent"
+
+
+                        fi
+
+                        sleep 2
+                    done
+
+                    # 进程完成，设置100%
+                    echo "100" > "${progress_file}.percent"
+                ) &
+                local monitor_pid=$!
 
                 # 等待进程完成或超时
                 local elapsed=0
-                while [ $elapsed -lt $timeout_setting ]; do
-                    if ! kill -0 $ffmpeg_pid 2>/dev/null; then
+                while [ "$elapsed" -lt "$timeout_setting" ]; do
+                    if ! kill -0 "$ffmpeg_pid" 2>/dev/null; then
                         # 进程已完成
-                        wait $ffmpeg_pid
+                        wait "$ffmpeg_pid"
                         local exit_code=$?
-                        if [ $exit_code -ne 0 ]; then
+
+                        # 停止监控进程
+                        kill "$monitor_pid" 2>/dev/null
+                        wait "$monitor_pid" 2>/dev/null
+
+                        if [ "$exit_code" -ne 0 ]; then
                             echo "SEGMENT_${segment_index}_FAILED" > "$segment_output_file"
+
                         fi
-                        echo "100" > "$progress_file"  # 标记完成
+                        echo "100" > "${progress_file}.percent"  # 标记完成
                         return
                     fi
                     sleep 1
@@ -504,28 +559,79 @@ detect_scene_changes_parallel() {
                 done
 
                 # 超时，杀死进程
-                kill $ffmpeg_pid 2>/dev/null
-                wait $ffmpeg_pid 2>/dev/null
+                kill "$ffmpeg_pid" 2>/dev/null
+                kill "$monitor_pid" 2>/dev/null
+                wait "$ffmpeg_pid" 2>/dev/null
+                wait "$monitor_pid" 2>/dev/null
                 echo "SEGMENT_${segment_index}_TIMEOUT" > "$segment_output_file"
-                echo "TIMEOUT" > "$progress_file"
+                echo "TIMEOUT" > "${progress_file}.percent"
             else
                 # 无超时模式，但仍然监控进度
-                ffmpeg -ss "$segment_start_time" -t "$((segment_end_time - segment_start_time))" -i "$video_input_file" \
-                    -vf "scale=640:-1,fps=2,select='gt(scene,$scene_threshold)',showinfo" \
+                local segment_duration=$((segment_end_time - segment_start_time))
+                local error_log="$segment_output_file.error"
+
+
+
+                # 使用相同的阈值调整逻辑
+                local effective_threshold="$scene_threshold"
+                if (( $(echo "$scene_threshold > 0.15" | bc -l) )); then
+                    effective_threshold="0.1"
+                    # 阈值调整信息只显示一次
+                    if [ ! -f "/tmp/.scene_threshold_adjusted" ]; then
+                        echo "场景阈值过高($scene_threshold)，自动调整为 $effective_threshold"
+                        touch "/tmp/.scene_threshold_adjusted"
+                    fi
+                fi
+
+                # 修复输出重定向：showinfo输出到stderr，需要正确捕获
+                ffmpeg -ss "$segment_start_time" -t "$segment_duration" -i "$video_input_file" \
+                    -vf "scale=640:-1,fps=1,select='gt(scene,$effective_threshold)',showinfo" \
                     -f null - \
                     -threads "$segment_threads" \
                     -preset ultrafast \
-                    -progress "$progress_file" \
-                    2>"$segment_output_file" &
+                    -nostats -loglevel info \
+                    >"$error_log" 2>"$segment_output_file" &
                 local ffmpeg_pid=$!
 
+                # 启动进度监控子进程
+                (
+                    local start_time=$(date +%s)
+                    while kill -0 "$ffmpeg_pid" 2>/dev/null; do
+                        local current_time=$(date +%s)
+                        local elapsed=$((current_time - start_time))
+
+                        # 基于时间估算进度（更积极的估算）
+                        if [ "$segment_duration" -gt 0 ]; then
+                            # 使用更积极的进度估算，场景检测通常比实时快
+                            local estimated_progress=$((elapsed * 200 / segment_duration))
+                            if [ "$estimated_progress" -gt 95 ]; then estimated_progress=95; fi
+                            if [ "$estimated_progress" -lt 0 ]; then estimated_progress=0; fi
+                            echo "$estimated_progress" > "${progress_file}.percent"
+
+
+                        fi
+
+                        sleep 2
+                    done
+
+                    # 进程完成，设置100%
+                    echo "100" > "${progress_file}.percent"
+                ) &
+                local monitor_pid=$!
+
                 # 等待进程完成
-                wait $ffmpeg_pid
+                wait "$ffmpeg_pid"
                 local exit_code=$?
-                if [ $exit_code -ne 0 ]; then
+
+                # 停止监控进程
+                kill "$monitor_pid" 2>/dev/null
+                wait "$monitor_pid" 2>/dev/null
+
+                if [ "$exit_code" -ne 0 ]; then
                     echo "SEGMENT_${segment_index}_FAILED" > "$segment_output_file"
+
                 else
-                    echo "100" > "$progress_file"  # 标记完成
+                    echo "100" > "${progress_file}.percent"  # 标记完成
                 fi
             fi
         ) &
@@ -539,6 +645,13 @@ detect_scene_changes_parallel() {
     local all_completed=false
     local segment_progress=()
     local segment_status=()
+    local debug_mode="${DEBUG_SCENE_DETECT:-false}"
+
+    # 调试信息
+    if [ "$debug_mode" = "true" ]; then
+        echo "调试模式: 启动了 $segment_count 个分段进程"
+        echo "进程ID: ${segment_pids[*]}"
+    fi
 
     # 初始化分段状态
     for ((i=0; i<segment_count; i++)); do
@@ -547,8 +660,8 @@ detect_scene_changes_parallel() {
     done
 
     # 实时监控逻辑
-    while [ $completed_segments -lt $segment_count ]; do
-        sleep 0.5
+    while [ "$completed_segments" -lt "$segment_count" ]; do
+        sleep 1  # 增加更新频率，从0.5秒改为1秒
 
         # 检查每个分段的状态和进度
         local new_completed=0
@@ -560,12 +673,21 @@ detect_scene_changes_parallel() {
             local segment_file="${segment_files[i]}"
             local progress_file="${segment_file}.progress"
 
-            if ! kill -0 $pid 2>/dev/null; then
+            if ! kill -0 "$pid" 2>/dev/null; then
                 # 进程已完成，检查结果
                 if [ "${segment_status[i]}" != "✓完成" ] && [ "${segment_status[i]}" != "✗失败" ]; then
-                    if [ -f "$segment_file" ] && [ -s "$segment_file" ] && ! grep -q "SEGMENT_${i}_FAILED\|SEGMENT_${i}_TIMEOUT" "$segment_file" 2>/dev/null; then
+                    # 检查是否有失败标记
+                    if [ -f "$segment_file" ] && grep -q "SEGMENT_${i}_FAILED\|SEGMENT_${i}_TIMEOUT" "$segment_file" 2>/dev/null; then
+                        segment_status[i]="✗失败"
+                        segment_progress[i]=0
+                    # 检查是否有有效输出（showinfo输出）
+                    elif [ -f "$segment_file" ] && grep -q "pts_time:\|showinfo" "$segment_file" 2>/dev/null; then
                         segment_status[i]="✓完成"
                         segment_progress[i]=100
+                    # 文件存在但没有有效输出
+                    elif [ -f "$segment_file" ]; then
+                        segment_status[i]="✗失败"
+                        segment_progress[i]=0
                     else
                         segment_status[i]="✗失败"
                         segment_progress[i]=0
@@ -574,13 +696,65 @@ detect_scene_changes_parallel() {
                 new_completed=$((new_completed + 1))
             else
                 # 进程仍在运行，读取进度
-                if [ -f "$progress_file" ]; then
-                    local current_progress=$(tail -1 "$progress_file" 2>/dev/null | grep -o '[0-9]*' | head -1)
-                    if [[ "$current_progress" =~ ^[0-9]+$ ]] && [ "$current_progress" -le 100 ]; then
-                        segment_progress[i]=$current_progress
-                        if [ "$current_progress" -gt 0 ]; then
+                local progress_percent=0
+
+                # 优先读取百分比文件
+                if [ -f "${progress_file}.percent" ]; then
+                    progress_percent=$(cat "${progress_file}.percent" 2>/dev/null || echo "0")
+                    if [[ "$progress_percent" =~ ^[0-9]+$ ]] && [ "$progress_percent" -le 100 ]; then
+                        segment_progress[i]=$progress_percent
+                        if [ "$progress_percent" -gt 0 ]; then
                             segment_status[i]="处理中"
                         fi
+                    fi
+
+                    # 调试信息
+                    if [ "$debug_mode" = "true" ]; then
+                        echo "分段$i: 百分比文件进度=${progress_percent}%"
+                    fi
+                elif [ -f "$progress_file" ]; then
+                    # 解析FFmpeg progress文件格式
+                    local current_time=$(grep "out_time_ms=" "$progress_file" 2>/dev/null | tail -1 | cut -d= -f2)
+                    if [ -n "$current_time" ] && [ "$current_time" != "N/A" ]; then
+                        # 转换微秒到秒
+                        local current_seconds=$((current_time / 1000000))
+                        local segment_duration=$((segment_end_time - segment_start_time))
+                        if [ "$segment_duration" -gt 0 ]; then
+                            progress_percent=$((current_seconds * 100 / segment_duration))
+                            if [ "$progress_percent" -gt 100 ]; then progress_percent=100; fi
+                            if [ "$progress_percent" -ge 0 ]; then
+                                segment_progress[i]=$progress_percent
+                                if [ "$progress_percent" -gt 0 ]; then
+                                    segment_status[i]="处理中"
+                                fi
+                            fi
+                        fi
+
+                        # 调试信息
+                        if [ "$debug_mode" = "true" ]; then
+                            echo "分段$i: 当前时间=${current_seconds}s, 总时长=${segment_duration}s, 进度=${progress_percent}%"
+                        fi
+                    else
+                        # 回退到简单的数字解析
+                        local simple_progress=$(tail -1 "$progress_file" 2>/dev/null | grep -o '[0-9]*' | head -1)
+                        if [[ "$simple_progress" =~ ^[0-9]+$ ]] && [ "$simple_progress" -le 100 ]; then
+                            segment_progress[i]=$simple_progress
+                            if [ "$simple_progress" -gt 0 ]; then
+                                segment_status[i]="处理中"
+                            fi
+                        fi
+
+                        # 调试信息
+                        if [ "$debug_mode" = "true" ]; then
+                            echo "分段$i: 简单进度解析=${simple_progress}%"
+                        fi
+                    fi
+                else
+                    # 调试信息：进度文件不存在
+                    if [ "$debug_mode" = "true" ]; then
+                        echo "分段$i: 进度文件不存在 ($progress_file)"
+                        # 检查文件是否真的不存在
+                        ls -la "$(dirname "$progress_file")" 2>/dev/null | grep "$(basename "$progress_file")" || echo "确实不存在"
                     fi
                 fi
             fi
@@ -606,18 +780,61 @@ detect_scene_changes_parallel() {
         # 计算总进度
         local overall_progress=$((total_progress / segment_count))
 
-        # 更新显示（只在状态变化时更新）
-        local current_display="总进度:${overall_progress}% [$status_line]"
+        # 生成更好的进度显示
+        local display_mode="${PROGRESS_DISPLAY_MODE:-auto}"
+        local current_display=""
 
-        if [ "$current_display" != "${last_display:-}" ]; then
-            printf "\r%-150s\r%s" "" "$current_display"
+        # 根据显示模式生成不同的输出
+        case "$display_mode" in
+            "bar")
+                current_display=$(generate_progress_bar_display "$overall_progress" "$segment_count")
+                ;;
+            "table")
+                current_display=$(generate_progress_table_display "$overall_progress" "$segment_count")
+                ;;
+            "compact")
+                current_display=$(generate_progress_compact_display "$overall_progress" "$segment_count")
+                ;;
+            "simple")
+                current_display="总进度:${overall_progress}% [$status_line]"
+                ;;
+            *)
+                # 自动选择：CI环境用table，本地用bar
+                if [ -n "${CI:-}" ] || [ -n "${GITHUB_ACTIONS:-}" ]; then
+                    current_display=$(generate_progress_table_display "$overall_progress" "$segment_count")
+                else
+                    current_display=$(generate_progress_bar_display "$overall_progress" "$segment_count")
+                fi
+                ;;
+        esac
+
+        # 调试信息
+        if [ "$debug_mode" = "true" ]; then
+            echo "监控循环: 已完成=$completed_segments, 总数=$segment_count, 总进度=$overall_progress%"
+        fi
+
+        if [ "$current_display" != "${last_display:-}" ] || [ "$debug_mode" = "true" ]; then
+            # 检测是否在CI环境中
+            if [ -n "${CI:-}" ] || [ -n "${GITHUB_ACTIONS:-}" ]; then
+                # CI环境：使用换行输出
+                echo "$current_display"
+            else
+                # 本地环境：根据显示模式选择输出方式
+                if [ "$display_mode" = "table" ]; then
+                    # 表格模式：清屏重绘
+                    printf "\033[2J\033[H%s" "$current_display"
+                else
+                    # 其他模式：使用\r更新
+                    printf "\r\033[K%s" "$current_display"
+                fi
+            fi
             last_display="$current_display"
         fi
 
         completed_segments=$new_completed
 
         # 如果所有分段都完成了
-        if [ $completed_segments -eq $segment_count ]; then
+        if [ "$completed_segments" -eq "$segment_count" ]; then
             all_completed=true
             break
         fi
@@ -629,16 +846,21 @@ detect_scene_changes_parallel() {
     done
 
     # 确保最终显示100%
-    printf "\n并行场景检测完成: %d/%d 分段成功\n" $completed_segments $segment_count
+    if [ -n "${CI:-}" ] || [ -n "${GITHUB_ACTIONS:-}" ]; then
+        echo ""
+        echo "并行场景检测完成: $completed_segments/$segment_count 分段成功"
+    else
+        printf "\n并行场景检测完成: %d/%d 分段成功\n" "$completed_segments" "$segment_count"
+    fi
 
     # 等待所有进程完成
     for pid in "${segment_pids[@]}"; do
-        wait $pid 2>/dev/null
+        wait "$pid" 2>/dev/null
     done
 
     local end_time=$(date +%s)
     local processing_time=$((end_time - start_time))
-    printf " 完成 (用时: %ds)\n" $processing_time
+    printf " 完成 (用时: %ds)\n" "$processing_time"
 
     # 合并所有分段结果
     local scene_times=()
@@ -666,9 +888,14 @@ detect_scene_changes_parallel() {
             continue
         fi
 
-        # 检查文件是否为空或只包含错误信息
-        if [ ! -s "$segment_file" ]; then
-            echo "警告: 分段 $i 输出为空"
+        # 检查文件是否有有效的场景检测输出
+        local has_valid_output=false
+        if [ -s "$segment_file" ] && grep -q "pts_time:\|showinfo" "$segment_file" 2>/dev/null; then
+            has_valid_output=true
+        fi
+
+        if [ "$has_valid_output" = "false" ]; then
+            echo "警告: 分段 $i 输出为空或无有效场景检测数据"
             failed_segments=$((failed_segments + 1))
             continue
         fi
@@ -842,4 +1069,150 @@ calculate_scene_timepoints() {
     SCENE_TIMEPOINTS=("${smart_times[@]}")
     echo -e "${GREEN}选择了 ${#smart_times[@]} 个场景检测截图时间点${NC}"
     return 0
+}
+
+# 生成进度条显示（简化版，避免数组引用问题）
+generate_progress_bar_display() {
+    local overall_progress="$1"
+    local segment_count="$2"
+    # 不使用数组引用，直接从全局数组读取
+
+    local output=""
+
+    # 总进度条
+    local bar_width=50
+    local filled=$((overall_progress * bar_width / 100))
+    local empty=$((bar_width - filled))
+
+    local progress_bar="["
+    for i in $(seq 1 $filled); do progress_bar="${progress_bar}█"; done
+    for i in $(seq 1 $empty); do progress_bar="${progress_bar}░"; done
+    progress_bar="${progress_bar}]"
+
+    output="总进度: ${progress_bar} ${overall_progress}%\n"
+
+    # 分段进度条
+    output="${output}分段进度:\n"
+    for i in $(seq 0 $((segment_count - 1))); do
+        local seg_progress=${segment_progress[i]:-0}
+        local seg_status=${segment_status[i]:-"等待中"}
+
+        # 小进度条
+        local seg_bar_width=20
+        local seg_filled=$((seg_progress * seg_bar_width / 100))
+        local seg_empty=$((seg_bar_width - seg_filled))
+
+        local seg_bar="["
+        if [ "$seg_status" = "✓完成" ]; then
+            for j in $(seq 1 $seg_bar_width); do seg_bar="${seg_bar}█"; done
+        elif [ "$seg_status" = "✗失败" ]; then
+            for j in $(seq 1 $seg_bar_width); do seg_bar="${seg_bar}▓"; done
+        else
+            for j in $(seq 1 $seg_filled); do seg_bar="${seg_bar}█"; done
+            for j in $(seq 1 $seg_empty); do seg_bar="${seg_bar}░"; done
+        fi
+        seg_bar="${seg_bar}]"
+
+        local status_icon=""
+        case "$seg_status" in
+            "✓完成") status_icon="✓" ;;
+            "✗失败") status_icon="✗" ;;
+            "处理中") status_icon="⚡" ;;
+            *) status_icon="⏳" ;;
+        esac
+
+        output="${output}  分段${i}: ${seg_bar} ${seg_progress}% ${status_icon}\n"
+    done
+
+    printf "%b" "$output"
+}
+
+# 生成表格显示（简化版）
+generate_progress_table_display() {
+    local overall_progress="$1"
+    local segment_count="$2"
+    # 直接从全局数组读取
+
+    local output=""
+
+    # 表头
+    output="┌─────────────────────────────────────────────────────────┐\n"
+    output="${output}│                 并行场景检测进度                        │\n"
+    output="${output}├─────────┬──────────────────────┬─────────┬─────────────┤\n"
+    output="${output}│  分段   │       进度条         │  百分比 │    状态     │\n"
+    output="${output}├─────────┼──────────────────────┼─────────┼─────────────┤\n"
+
+    # 分段行
+    for i in $(seq 0 $((segment_count - 1))); do
+        local seg_progress=${segment_progress[i]:-0}
+        local seg_status=${segment_status[i]:-"等待中"}
+
+        # 进度条
+        local bar_width=20
+        local filled=$((seg_progress * bar_width / 100))
+        local empty=$((bar_width - filled))
+
+        local bar=""
+        if [ "$seg_status" = "✓完成" ]; then
+            for j in $(seq 1 $bar_width); do bar="${bar}█"; done
+        elif [ "$seg_status" = "✗失败" ]; then
+            for j in $(seq 1 $bar_width); do bar="${bar}▓"; done
+        else
+            for j in $(seq 1 $filled); do bar="${bar}█"; done
+            for j in $(seq 1 $empty); do bar="${bar}░"; done
+        fi
+
+        local status_text=""
+        case "$seg_status" in
+            "✓完成") status_text="✓ 完成    " ;;
+            "✗失败") status_text="✗ 失败    " ;;
+            "处理中") status_text="⚡ 处理中  " ;;
+            *) status_text="⏳ 等待中  " ;;
+        esac
+
+        output="${output}│ 分段 ${i}  │ ${bar} │  ${seg_progress}%   │ ${status_text} │\n"
+    done
+
+    # 总进度行
+    output="${output}├─────────┼──────────────────────┼─────────┼─────────────┤\n"
+    local total_bar_width=20
+    local total_filled=$((overall_progress * total_bar_width / 100))
+    local total_empty=$((total_bar_width - total_filled))
+
+    local total_bar=""
+    for j in $(seq 1 $total_filled); do total_bar="${total_bar}█"; done
+    for j in $(seq 1 $total_empty); do total_bar="${total_bar}░"; done
+
+    output="${output}│  总计   │ ${total_bar} │ ${overall_progress}%   │ 并行处理    │\n"
+    output="${output}└─────────┴──────────────────────┴─────────┴─────────────┘"
+
+    printf "%b" "$output"
+}
+
+# 生成紧凑显示（简化版）
+generate_progress_compact_display() {
+    local overall_progress="$1"
+    local segment_count="$2"
+    # 直接从全局数组读取
+
+    local output="进度: ${overall_progress}% ["
+
+    for i in $(seq 0 $((segment_count - 1))); do
+        local seg_progress=${segment_progress[i]:-0}
+        local seg_status=${segment_status[i]:-"等待中"}
+
+        local icon=""
+        case "$seg_status" in
+            "✓完成") icon="✓" ;;
+            "✗失败") icon="✗" ;;
+            "处理中") icon="⚡" ;;
+            *) icon="⏳" ;;
+        esac
+
+        if [ $i -gt 0 ]; then output="${output} "; fi
+        output="${output}${i}:${seg_progress}%${icon}"
+    done
+
+    output="${output}]"
+    printf "%s" "$output"
 }

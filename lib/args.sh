@@ -355,10 +355,21 @@ validate_args() {
     fi
     
     # 验证场景检测阈值
-    if ! [[ "$SCENE_THRESHOLD" =~ ^0\.[0-9]+$|^1\.0*$ ]] || \
-       (( $(echo "$SCENE_THRESHOLD < 0.1" | bc -l) )) || \
-       (( $(echo "$SCENE_THRESHOLD > 1.0" | bc -l) )); then
-        error_exit "scene-threshold必须是0.1-1.0之间的小数"
+    if ! [[ "$SCENE_THRESHOLD" =~ ^0\.[0-9]+$|^1\.0*$ ]]; then
+        error_exit "scene-threshold必须是小数格式，当前值: '$SCENE_THRESHOLD'"
+    fi
+
+    # 使用更安全的数值比较
+    if ! command -v bc &> /dev/null; then
+        # 如果没有bc，使用awk进行浮点数比较
+        if ! awk "BEGIN {exit !($SCENE_THRESHOLD >= 0.1 && $SCENE_THRESHOLD <= 1.0)}"; then
+            error_exit "scene-threshold必须是0.1-1.0之间的小数，当前值: '$SCENE_THRESHOLD'"
+        fi
+    else
+        if (( $(echo "$SCENE_THRESHOLD < 0.1" | bc -l) )) || \
+           (( $(echo "$SCENE_THRESHOLD > 1.0" | bc -l) )); then
+            error_exit "scene-threshold必须是0.1-1.0之间的小数，当前值: '$SCENE_THRESHOLD'"
+        fi
     fi
     
     if [ -n "$WIDTH" ] && (! [[ "$WIDTH" =~ ^[0-9]+$ ]] || [ "$WIDTH" -le 0 ]); then

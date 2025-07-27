@@ -21,6 +21,8 @@ ENABLE_KEYFRAME_DETECTION=true
 DEFAULT_KEYFRAME_MIN_INTERVAL=5
 # 分批生成默认参数
 DEFAULT_MAX_FRAMES_PER_PART=0  # 0表示使用尺寸限制逻辑，>0表示按帧数分批
+# 保留小图片默认参数
+DEFAULT_KEEP_FRAMES=false  # 是否保留截图的小图片到与文件同名的文件夹中
 
 # 运行时参数
 INTERVAL=""
@@ -124,6 +126,7 @@ print_help() {
     echo "  --suffix                文件名包含参数后缀"
     echo "  --max-frames-per-part <n>  每个部分最大帧数，用于分批生成 (默认: 0，使用尺寸限制)"
     echo "  --force-split           强制启用分批生成模式（忽略帧数限制）"
+    echo "  --keep-frames           保留截图的小图片到与文件同名的文件夹中"
     echo "  --help                  显示帮助信息"
     echo ""
     echo "示例:"
@@ -286,6 +289,11 @@ parse_arguments() {
                 ;;
             --force-split)
                 FORCE_SPLIT=true
+                shift 1
+                ;;
+            --keep-frames)
+                KEEP_FRAMES=true
+                KEEP_FRAMES_ENABLED_BY_USER=true
                 shift 1
                 ;;
             *)

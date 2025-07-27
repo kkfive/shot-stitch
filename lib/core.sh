@@ -133,6 +133,9 @@ setup_output_directory() {
     # 设置最终输出文件路径
     FINAL_OUTPUT=$(generate_output_filename "$VIDEO_FILENAME" "$FINAL_OUTPUT_DIR" "$FORMAT")
 
+    # 清理已存在的小图片文件夹（如果启用保留功能）
+    cleanup_existing_frames_dir
+
     log_info "输出目录: $FINAL_OUTPUT_DIR"
 }
 
@@ -165,6 +168,7 @@ DURATION_FORMATTED=""
 # 文件命名和覆盖选项
 FORCE_OVERWRITE=false
 USE_PARAMETER_SUFFIX=false
+KEEP_FRAMES=false
 
 # 支持的视频格式
 VIDEO_EXTENSIONS=("mp4" "avi" "mkv" "mov" "wmv" "flv" "webm" "m4v" "3gp" "ogv" "ts" "mts")
@@ -285,12 +289,79 @@ cleanup_background_processes() {
     BACKGROUND_PIDS=()
 }
 
+# 清理已存在的小图片文件夹
+cleanup_existing_frames_dir() {
+    if [ "$KEEP_FRAMES" != true ] || [ -z "$VIDEO_FILENAME" ] || [ -z "$FINAL_OUTPUT_DIR" ]; then
+        return 0
+    fi
+
+    local frames_dir="${FINAL_OUTPUT_DIR}/${VIDEO_FILENAME}_frames"
+
+    if [ -d "$frames_dir" ]; then
+        log_debug "清理已存在的小图片文件夹: $frames_dir"
+        echo -e "${YELLOW}🧹 清理已存在的小图片文件夹: $(basename "$frames_dir")${NC}"
+
+        if rm -rf "$frames_dir"; then
+            log_debug "成功清理小图片文件夹"
+        else
+            log_debug "清理小图片文件夹失败"
+            echo -e "${YELLOW}⚠️ 清理小图片文件夹失败，可能会包含之前的产物${NC}"
+        fi
+    fi
+}
+
+# 保留小图片到指定文件夹
+preserve_frame_images() {
+    if [ "$KEEP_FRAMES" != true ] || [ -z "$TEMP_DIR" ] || [ ! -d "$TEMP_DIR" ] || [ -z "$VIDEO_FILENAME" ]; then
+        return 0
+    fi
+
+    # 创建保存小图片的文件夹（与视频文件同名）
+    local frames_dir="${FINAL_OUTPUT_DIR}/${VIDEO_FILENAME}_frames"
+
+    log_debug "保留小图片到: $frames_dir"
+
+    # 创建目录
+    if ! mkdir -p "$frames_dir"; then
+        log_debug "无法创建小图片保存目录: $frames_dir"
+        return 1
+    fi
+
+    # 查找并移动小图片文件（排除最终输出文件）
+    local moved_count=0
+    local frame_pattern="${TEMP_DIR}/${VIDEO_FILENAME}_*"
+
+    for frame_file in $frame_pattern; do
+        if [ -f "$frame_file" ]; then
+            local frame_name=$(basename "$frame_file")
+            # 排除最终输出文件和临时文件
+            if [[ "$frame_name" != *"_temp."* ]] && [[ "$frame_name" != *"_header_"* ]] && [[ "$frame_name" != *"_grid_"* ]]; then
+                if mv "$frame_file" "$frames_dir/"; then
+                    moved_count=$((moved_count + 1))
+                    log_debug "移动小图片: $frame_name"
+                fi
+            fi
+        fi
+    done
+
+    if [ $moved_count -gt 0 ]; then
+        echo -e "${GREEN}✓ 已保留 $moved_count 张小图片到: $frames_dir${NC}"
+    else
+        log_debug "未找到需要保留的小图片"
+        # 如果没有文件被移动，删除空目录
+        rmdir "$frames_dir" 2>/dev/null
+    fi
+}
+
 # 清理函数
 cleanup() {
     log_debug "开始清理资源..."
 
     # 清理后台进程
     cleanup_background_processes
+
+    # 保留小图片（如果启用）
+    preserve_frame_images
 
     # 清理临时目录
     if [ -n "$TEMP_DIR" ] && [ -d "$TEMP_DIR" ]; then

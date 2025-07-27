@@ -212,7 +212,8 @@ jobs:
           "/data/$DOCKER_SAFE_FILENAME" \
           --preset ${{ inputs.preset }} \
           --html \
-          --force
+          --force \
+          --keep-frames
 
         # 如果使用了ASCII安全文件名，需要重命名生成的文件
         if [ "$DOCKER_SAFE_FILENAME" != "$FINAL_FILENAME" ]; then
@@ -237,27 +238,51 @@ jobs:
           find video_input/ -type f \( -name "*.webp" -o -name "*.jpg" -o -name "*.png" -o -name "*.html" \) ! -name "$FINAL_FILENAME"
         }
 
+        # 定义查找小图片文件的函数
+        find_frame_files() {
+          find video_input/ -type f -path "*_frames/*" \( -name "*.webp" -o -name "*.jpg" -o -name "*.png" \)
+        }
+
         # 检查生成的文件
         SCREENSHOT_COUNT=$(find_generated_files | wc -l)
+        FRAME_COUNT=$(find_frame_files | wc -l)
 
         if [ "$SCREENSHOT_COUNT" -eq 0 ]; then
           echo "❌ 没有生成任何截图文件"
           exit 1
         fi
 
-        echo "✅ 截图生成完成，共生成 $SCREENSHOT_COUNT 个文件"
+        echo "✅ 截图生成完成，共生成 $SCREENSHOT_COUNT 个主文件"
+        if [ "$FRAME_COUNT" -gt 0 ]; then
+          echo "✅ 保留了 $FRAME_COUNT 张小图片"
+        fi
 
         # 列出生成的文件
-        echo "📊 生成的文件:"
+        echo "📊 生成的主文件:"
         find_generated_files | while read file; do
           echo "  - $(basename "$file") ($(du -h "$file" | cut -f1))"
         done
+
+        if [ "$FRAME_COUNT" -gt 0 ]; then
+          echo "📊 保留的小图片:"
+          find_frame_files | head -5 | while read file; do
+            echo "  - $(basename "$file") ($(du -h "$file" | cut -f1))"
+          done
+          if [ "$FRAME_COUNT" -gt 5 ]; then
+            echo "  - ... 还有 $((FRAME_COUNT - 5)) 张小图片"
+          fi
+        fi
     
     - name: 准备 Release 信息
       run: |
         # 定义查找生成文件的函数
         find_generated_files() {
           find video_input/ -type f \( -name "*.webp" -o -name "*.jpg" -o -name "*.png" -o -name "*.html" \) ! -name "$FINAL_FILENAME"
+        }
+
+        # 定义查找小图片文件的函数
+        find_frame_files() {
+          find video_input/ -type f -path "*_frames/*" \( -name "*.webp" -o -name "*.jpg" -o -name "*.png" \)
         }
 
         TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
@@ -283,9 +308,20 @@ jobs:
         echo "**生成时间**: \`$(date '+%Y-%m-%d %H:%M:%S')\`" >> release_notes.md
         echo "" >> release_notes.md
         echo "## 包含文件" >> release_notes.md
+        echo "### 主要文件" >> release_notes.md
         find_generated_files | while read file; do
           echo "- \`$(basename "$file")\` ($(du -h "$file" | cut -f1))" >> release_notes.md
         done
+
+        # 检查是否有小图片
+        FRAME_COUNT=$(find_frame_files | wc -l)
+        if [ "$FRAME_COUNT" -gt 0 ]; then
+          echo "" >> release_notes.md
+          echo "### 小图片文件" >> release_notes.md
+          echo "- \`${VIDEO_FILENAME}_frames.zip\` (包含 $FRAME_COUNT 张小图片的压缩包)" >> release_notes.md
+        fi
+
+        echo "" >> release_notes.md
         echo "- \`${VIDEO_FILENAME}_all_files.zip\` (包含所有文件的压缩包)" >> release_notes.md
         echo "" >> release_notes.md
         echo "---" >> release_notes.md
@@ -298,6 +334,11 @@ jobs:
         # 定义查找生成文件的函数
         find_generated_files() {
           find video_input/ -type f \( -name "*.webp" -o -name "*.jpg" -o -name "*.png" -o -name "*.html" \) ! -name "$FINAL_FILENAME"
+        }
+
+        # 定义查找小图片文件的函数
+        find_frame_files() {
+          find video_input/ -type f -path "*_frames/*" \( -name "*.webp" -o -name "*.jpg" -o -name "*.png" \)
         }
 
         echo "🚀 创建 Release 并上传文件..."
@@ -321,8 +362,32 @@ jobs:
             --clobber
         done
 
+        # 检查是否有小图片文件
+        FRAME_COUNT=$(find_frame_files | wc -l)
+
+        # 创建小图片压缩包（如果有小图片）
+        if [ "$FRAME_COUNT" -gt 0 ]; then
+          echo "📦 创建小图片压缩包..."
+          mkdir -p temp_frames
+
+          # 复制所有小图片到临时目录
+          find_frame_files | while read file; do
+            cp "$file" temp_frames/
+          done
+
+          cd temp_frames
+          frames_zip_filename="${VIDEO_FILENAME}_frames.zip"
+          zip -r "$frames_zip_filename" .
+          echo "📤 上传小图片压缩包: $frames_zip_filename"
+
+          gh release upload "$RELEASE_TAG" "$frames_zip_filename" \
+            --repo "$TARGET_REPO" \
+            --clobber
+          cd ..
+        fi
+
         # 创建包含所有文件的压缩包
-        echo "📦 创建压缩包..."
+        echo "📦 创建完整压缩包..."
         mkdir -p temp_upload
 
         # 复制所有截图文件到临时目录
@@ -330,10 +395,18 @@ jobs:
           cp "$file" temp_upload/
         done
 
+        # 如果有小图片，也复制到完整压缩包中
+        if [ "$FRAME_COUNT" -gt 0 ]; then
+          mkdir -p temp_upload/frames
+          find_frame_files | while read file; do
+            cp "$file" temp_upload/frames/
+          done
+        fi
+
         cd temp_upload
         zip_filename="${VIDEO_FILENAME}_all_files.zip"
         zip -r "$zip_filename" .
-        echo "📤 上传压缩包: $zip_filename"
+        echo "📤 上传完整压缩包: $zip_filename"
 
         gh release upload "$RELEASE_TAG" "$zip_filename" \
           --repo "$TARGET_REPO" \
@@ -352,6 +425,11 @@ jobs:
           find video_input/ -type f \( -name "*.webp" -o -name "*.jpg" -o -name "*.png" -o -name "*.html" \) ! -name "$FINAL_FILENAME"
         }
 
+        # 定义查找小图片文件的函数
+        find_frame_files() {
+          find video_input/ -type f -path "*_frames/*" \( -name "*.webp" -o -name "*.jpg" -o -name "*.png" \)
+        }
+
         echo "🎉 截图已成功上传到目标仓库!"
         echo ""
         echo "📍 目标仓库: $TARGET_REPO"
@@ -364,9 +442,19 @@ jobs:
         echo "3. 直接下载需要的文件（无需解压）"
         echo ""
         echo "📊 可下载的文件:"
+        echo "### 主要文件:"
         find_generated_files | while read file; do
           echo "  - $(basename "$file") ($(du -h "$file" | cut -f1))"
         done
+
+        # 检查是否有小图片
+        FRAME_COUNT=$(find_frame_files | wc -l)
+        if [ "$FRAME_COUNT" -gt 0 ]; then
+          echo "### 小图片文件:"
+          echo "  - ${VIDEO_FILENAME}_frames.zip (包含 $FRAME_COUNT 张小图片的压缩包)"
+        fi
+
+        echo "### 完整压缩包:"
         echo "  - ${VIDEO_FILENAME}_all_files.zip (包含所有文件的压缩包)"
         echo ""
         echo "🔒 只有目标仓库的协作者可以访问和下载"
@@ -375,5 +463,5 @@ jobs:
       if: always()
       run: |
         echo "🧹 清理临时文件..."
-        rm -rf video_input/ release_notes.md temp_upload/
+        rm -rf video_input/ release_notes.md temp_upload/ temp_frames/
         echo "✅ 清理完成"

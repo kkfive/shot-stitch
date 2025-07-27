@@ -100,7 +100,13 @@ setup_temp_directory() {
     fi
 
     # 临时目录放在与视频同目录下，使用更安全的命名
-    TEMP_DIR="$video_dir/.video_preview_tmp_$$_$(date +%s)"
+    local timestamp
+    if [ -n "$TZ" ]; then
+        timestamp=$(TZ="$TZ" date +%s)
+    else
+        timestamp=$(date +%s)
+    fi
+    TEMP_DIR="$video_dir/.video_preview_tmp_$$_$timestamp"
 
     # 确保临时目录不存在（避免冲突）
     if [ -e "$TEMP_DIR" ]; then

@@ -42,8 +42,12 @@ get_video_info() {
         VIDEO_FILENAME_DISPLAY="$VIDEO_FILENAME"
     fi
     
-    # 生成时间
-    GENERATION_TIME=$(date "+%Y-%m-%d %H:%M:%S")
+    # 生成时间（使用北京时间）
+    if [ -n "$TZ" ]; then
+        GENERATION_TIME=$(TZ="$TZ" date "+%Y-%m-%d %H:%M:%S")
+    else
+        GENERATION_TIME=$(TZ="Asia/Shanghai" date "+%Y-%m-%d %H:%M:%S")
+    fi
 
     # 计算有效时长（考虑跳过时间）
     calculate_effective_duration

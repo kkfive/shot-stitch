@@ -317,8 +317,13 @@ generate_html_report() {
         processing_time="${duration}秒"
     fi
 
-    # 生成时间
-    local generation_time=$(date "+%Y-%m-%d %H:%M:%S")
+    # 生成时间（使用北京时间）
+    local generation_time
+    if [ -n "$TZ" ]; then
+        generation_time=$(TZ="$TZ" date "+%Y-%m-%d %H:%M:%S")
+    else
+        generation_time=$(TZ="Asia/Shanghai" date "+%Y-%m-%d %H:%M:%S")
+    fi
 
     # 设置默认主题
     local theme="${HTML_THEME:-modern}"

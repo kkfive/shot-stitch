@@ -341,6 +341,11 @@ jobs:
           find video_input/ -type f -path "*_frames/*" \( -name "*.webp" -o -name "*.jpg" -o -name "*.png" \)
         }
 
+        # 定义查找预览图文件的函数（排除小图片）
+        find_preview_files() {
+          find video_input/ -type f \( -name "*.webp" -o -name "*.jpg" -o -name "*.png" \) ! -name "$FINAL_FILENAME" ! -path "*_frames/*"
+        }
+
         echo "🚀 创建 Release 并上传文件..."
 
         # 创建 Release
@@ -351,16 +356,47 @@ jobs:
 
         echo "✅ Release 创建成功: $RELEASE_TAG"
 
-        # 上传所有截图文件
-        echo "📤 上传截图文件..."
-        find_generated_files | while read file; do
+        # 获取预览图文件列表并排序
+        echo "📤 上传预览图文件..."
+        preview_files=($(find_preview_files | sort))
+
+        # 单独上传每张预览图
+        preview_count=0
+        for file in "${preview_files[@]}"; do
           filename=$(basename "$file")
-          echo "📤 上传: $filename"
+          preview_count=$((preview_count + 1))
+          echo "📤 上传第${preview_count}张预览图: $filename"
 
           gh release upload "$RELEASE_TAG" "$file" \
             --repo "$TARGET_REPO" \
             --clobber
         done
+
+        # 创建预览图压缩包（如果有预览图）
+        if [ ${#preview_files[@]} -gt 0 ]; then
+          echo "📦 创建预览图压缩包..."
+          mkdir -p temp_previews
+
+          # 复制所有预览图到临时目录
+          for file in "${preview_files[@]}"; do
+            cp "$file" temp_previews/
+          done
+
+          # 复制HTML文件（如果存在）
+          find video_input/ -type f -name "*.html" ! -name "$FINAL_FILENAME" | while read file; do
+            cp "$file" temp_previews/
+          done
+
+          cd temp_previews
+          previews_zip_filename="${VIDEO_FILENAME}_previews.zip"
+          zip -r "$previews_zip_filename" .
+          echo "📤 上传预览图压缩包: $previews_zip_filename"
+
+          gh release upload "$RELEASE_TAG" "$previews_zip_filename" \
+            --repo "$TARGET_REPO" \
+            --clobber
+          cd ..
+        fi
 
         # 检查是否有小图片文件
         FRAME_COUNT=$(find_frame_files | wc -l)
@@ -385,33 +421,6 @@ jobs:
             --clobber
           cd ..
         fi
-
-        # 创建包含所有文件的压缩包
-        echo "📦 创建完整压缩包..."
-        mkdir -p temp_upload
-
-        # 复制所有截图文件到临时目录
-        find_generated_files | while read file; do
-          cp "$file" temp_upload/
-        done
-
-        # 如果有小图片，也复制到完整压缩包中
-        if [ "$FRAME_COUNT" -gt 0 ]; then
-          mkdir -p temp_upload/frames
-          find_frame_files | while read file; do
-            cp "$file" temp_upload/frames/
-          done
-        fi
-
-        cd temp_upload
-        zip_filename="${VIDEO_FILENAME}_all_files.zip"
-        zip -r "$zip_filename" .
-        echo "📤 上传完整压缩包: $zip_filename"
-
-        gh release upload "$RELEASE_TAG" "$zip_filename" \
-          --repo "$TARGET_REPO" \
-          --clobber
-        cd ..
 
         echo "✅ 所有文件上传完成"
         echo "RELEASE_URL=https://github.com/$TARGET_REPO/releases/tag/$RELEASE_TAG" >> $GITHUB_ENV
@@ -441,21 +450,39 @@ jobs:
         echo "2. 找到标签为 '$RELEASE_TAG' 的 Release"
         echo "3. 直接下载需要的文件（无需解压）"
         echo ""
+        # 定义查找预览图文件的函数（排除小图片）
+        find_preview_files() {
+          find video_input/ -type f \( -name "*.webp" -o -name "*.jpg" -o -name "*.png" \) ! -name "$FINAL_FILENAME" ! -path "*_frames/*"
+        }
+
         echo "📊 可下载的文件:"
-        echo "### 主要文件:"
-        find_generated_files | while read file; do
-          echo "  - $(basename "$file") ($(du -h "$file" | cut -f1))"
-        done
+
+        # 显示单独上传的预览图
+        preview_files=($(find_preview_files | sort))
+        if [ ${#preview_files[@]} -gt 0 ]; then
+          echo "### 🖼️ 预览图文件:"
+          preview_count=0
+          for file in "${preview_files[@]}"; do
+            filename=$(basename "$file")
+            size=$(du -h "$file" | cut -f1)
+            preview_count=$((preview_count + 1))
+            echo "  - 第${preview_count}张预览图: $filename ($size)"
+          done
+        fi
+
+        # 显示预览图压缩包
+        if [ ${#preview_files[@]} -gt 0 ]; then
+          echo "### 📦 预览图压缩包:"
+          echo "  - ${VIDEO_FILENAME}_previews.zip (包含 ${#preview_files[@]} 张预览图和HTML报告的压缩包)"
+        fi
 
         # 检查是否有小图片
         FRAME_COUNT=$(find_frame_files | wc -l)
         if [ "$FRAME_COUNT" -gt 0 ]; then
-          echo "### 小图片文件:"
+          echo "### 📦 小图片压缩包:"
           echo "  - ${VIDEO_FILENAME}_frames.zip (包含 $FRAME_COUNT 张小图片的压缩包)"
         fi
 
-        echo "### 完整压缩包:"
-        echo "  - ${VIDEO_FILENAME}_all_files.zip (包含所有文件的压缩包)"
         echo ""
         echo "🔒 只有目标仓库的协作者可以访问和下载"
     
@@ -463,5 +490,5 @@ jobs:
       if: always()
       run: |
         echo "🧹 清理临时文件..."
-        rm -rf video_input/ release_notes.md temp_upload/ temp_frames/
+        rm -rf video_input/ release_notes.md temp_previews/ temp_frames/
         echo "✅ 清理完成"
